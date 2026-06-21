@@ -1,13 +1,18 @@
-# QueryMind — Natural Language to SQL Platform
+# QueryMind 🧠
+> Natural Language to SQL Platform
 
-Ask questions in plain English and get instant SQL results against your uploaded data.
+Ask questions in plain English and get instant 
+SQL results against your uploaded data.
+
+## 🎯 Built to demonstrate
+Backend Engineering · Distributed Systems · 
+RAG Pipelines · Event-Driven Architecture · 
+Production Security
 
 ## Architecture
-
-```
 ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
 │   Frontend   │────▶│   Backend    │────▶│  PostgreSQL  │
-│  React+Vite  │     │   FastAPI    │     │  (temp schemas)│
+│  React+Vite  │     │   FastAPI    │     │(temp schemas)│
 │  Tailwind    │     │              │     └──────────────┘
 └──────────────┘     │  ┌────────┐  │     ┌──────────────┐
                      │  │ Gemini │──┼────▶│    Redis     │
@@ -15,97 +20,104 @@ Ask questions in plain English and get instant SQL results against your uploaded
                      │  ┌────────┐  │     └──────────────┘
                      │  │ChromaDB│  │     ┌──────────────┐
                      │  └────────┘  │────▶│    Kafka     │
-                     └──────────────┘     │   (events)   │
+                     └──────────────┘     │(KRaft mode)  │
                                           └──────────────┘
-```
 
 ## Services
-
-| Service | Port | Purpose |
-|---------|------|---------|
-| **Frontend** | 3000 | React 19 + Vite 8 + Tailwind CSS |
-| **Backend** | 8000 | FastAPI (Python 3.12), NLP→SQL pipeline |
-| **PostgreSQL** | 5432 | User schemas `user_{uid}_{db_id}`, metadata, audit |
-| **Redis** | 6379 | Query cache, refresh tokens, rate limiting |
-| **Kafka** | 9092 | Event streaming (audit, auth, query, schema events) |
-| **ChromaDB** | 8001 | Vector embeddings for schema RAG retrieval |
-| **Audit Consumer** | — | Kafka consumer persisting events to Postgres |
+| Service        | Port | Purpose                                        |
+|----------------|------|------------------------------------------------|
+| Frontend       | 3000 | React 19 + Vite + Tailwind CSS                 |
+| Backend        | 8000 | FastAPI (Python 3.12), NLP→SQL pipeline        |
+| PostgreSQL     | 5432 | User schemas, metadata, audit logs             |
+| Redis          | 6379 | Query cache, refresh tokens, rate limiting     |
+| Kafka          | 9092 | Event streaming (KRaft mode, no ZooKeeper)     |
+| ChromaDB       | 8001 | Vector embeddings for RAG schema retrieval     |
+| Audit Consumer | —    | Kafka consumer persisting events to PostgreSQL |
 
 ## Quick Start
+# 1. Clone the repo
+git clone https://github.com/yourusername/querymind
+cd querymind
 
-```bash
-# 1. Clone and cd into the project
-cd queryai
-
-# 2. Set your Gemini API key in .env
-# GEMINI_API_KEY=AIzaSy...
+# 2. Add your Gemini API key
+cp .env.example .env
+# Set GEMINI_API_KEY=AIzaSy...
 
 # 3. Start everything
 docker compose up -d --build
-```
 
-Open **http://localhost:3000** — register an account and start querying.
+Open http://localhost:3000 — register and start querying.
 
 ## Upload Formats
+Drag-and-drop upload supported:
 
-Drag-and-drop upload of data files. Supported formats:
-
-| Format | Extension |
-|--------|-----------|
-| CSV | `.csv` |
-| Excel | `.xlsx`, `.xls` |
-| JSON | `.json` |
+| Format | Extension     |
+|--------|---------------|
+| CSV    | .csv          |
+| Excel  | .xlsx, .xls   |
+| JSON   | .json         |
 
 On upload, the system:
-1. Parses the file with **pandas** (auto-detects column names & types)
-2. Creates a **temporary PostgreSQL schema** named `user_{user_id}_{db_id}`
-3. Loads the data as a proper table
-4. Extracts the **DDL** and generates **vector embeddings** in ChromaDB
-5. Tables used for RAG-assisted SQL generation
+1. Parses file with pandas (auto-detects columns & types)
+2. Creates isolated PostgreSQL schema: user_{user_id}_{db_id}
+3. Loads data as a proper relational table
+4. Extracts DDL and generates vector embeddings in ChromaDB
+5. Schema used for RAG-assisted SQL generation
 
 ## How It Works
-
-1. **Upload** a CSV/XLSX/JSON file
-2. **Ask** a question in natural language (e.g. "Show the top 5 products by revenue in Q3 2024")
-3. **RAG** retrieves relevant table schema from ChromaDB
-4. **Gemini** generates a PostgreSQL SELECT query
-5. **Validator** checks query safety (read-only enforcement)
-6. **PostgreSQL** executes the query against your temp schema
-7. **Results** display as a sortable table or interactive chart
-8. All queries are **cached in Redis** (1 hour TTL) and streamed to **Kafka**
+1. Upload a CSV, Excel, or JSON file
+2. Ask a question in plain English
+   e.g. "Show top 5 products by revenue in Q3 2024"
+3. RAG retrieves relevant schema chunks from ChromaDB
+4. Gemini 1.5 Flash generates a PostgreSQL SELECT query
+5. Validator enforces read-only safety rules
+6. PostgreSQL executes query against your isolated schema
+7. Results display as sortable table or interactive chart
+8. Results cached in Redis (1hr TTL), events streamed to Kafka
 
 ## Query Security
+- ✅ Only SELECT and WITH (CTE) queries allowed
+- ❌ Blocked: DROP, DELETE, ALTER, INSERT, UPDATE, TRUNCATE
+- ⏱️ 30 second query timeout
+- 📊 1,000 row result limit
+- 🔐 JWT auth with refresh token rotation
+- 🚦 Redis sliding window rate limiting (10 req/min per user)
+- 📝 Full audit trail via Kafka → PostgreSQL
 
-- Only `SELECT` and `WITH` (CTE) queries are allowed
-- Prohibited keywords: `DROP`, `DELETE`, `ALTER`, `INSERT`, `UPDATE`, etc.
-- Results capped at **1,000 rows** with **30s timeout**
-- JWT authentication with refresh tokens
-- Rate limiting per user (Redis sliding window)
+## Event-Driven Architecture
+All major operations publish to Kafka topics:
 
-## Development
-
-```bash
-# Frontend dev (no Docker)
-cd frontend && npm install --legacy-peer-deps && npm run dev
-
-# Backend dev (no Docker)
-cd backend && pip install -r requirements.txt && uvicorn app.main:app --reload
-```
+| Topic          | Events                                    |
+|----------------|-------------------------------------------|
+| auth-events    | UserRegistered, UserLoggedIn, UserLoggedOut|
+| query-events   | QueryExecuted, QueryFailed, CacheHit      |
+| schema-events  | SchemaIndexed, SchemaUpdated              |
+| audit-events   | Consumed by Audit Service → PostgreSQL    |
 
 ## Environment Variables
-
-| Variable | Description |
-|----------|-------------|
-| `GEMINI_API_KEY` | Google Gemini API key for SQL generation + embeddings |
-| `JWT_SECRET_KEY` | Secret for JWT signing |
-| `DATABASE_URL` | PostgreSQL connection string |
-| `REDIS_URL` | Redis connection string |
-| `KAFKA_BOOTSTRAP_SERVERS` | Kafka broker address |
-| `CHROMADB_HOST` / `CHROMADB_PORT` | ChromaDB connection |
+| Variable                    | Description                          |
+|-----------------------------|--------------------------------------|
+| GEMINI_API_KEY              | Google Gemini API key                |
+| JWT_SECRET_KEY              | Secret for JWT signing               |
+| DATABASE_URL                | PostgreSQL connection string         |
+| REDIS_URL                   | Redis connection string              |
+| KAFKA_BOOTSTRAP_SERVERS     | Kafka broker address                 |
+| CHROMADB_HOST / CHROMADB_PORT | ChromaDB connection                |
+| FERNET_KEY                  | Encryption key for stored credentials|
 
 ## Tech Stack
+**Frontend:** React 19, TypeScript, Vite, Tailwind CSS, Recharts, Lucide Icons
 
-**Frontend:** React 19, TypeScript, Vite 8, Tailwind CSS 3, Recharts, Lucide Icons
-**Backend:** FastAPI, SQLAlchemy 2.0 (async), Pandas, Alembic
-**Infra:** PostgreSQL 16, Redis 7, Kafka 7.6, ChromaDB, Docker Compose
-**AI:** Google Gemini 1.5 Pro (SQL generation + text embeddings)
+**Backend:** FastAPI, SQLAlchemy 2.0 async, Pandas, Alembic, aiokafka, passlib
+
+**Infrastructure:** PostgreSQL 16, Redis 7, Kafka 3.7 (KRaft), ChromaDB, Docker Compose
+
+**AI:** Gemini 1.5 Flash (SQL generation) + text-embedding-004 (schema embeddings)
+
+## Development
+# Frontend
+cd frontend && npm install && npm run dev
+
+# Backend  
+cd backend && pip install -r requirements.txt
+uvicorn app.main:app --reload
