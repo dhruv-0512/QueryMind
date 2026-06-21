@@ -1,4 +1,3 @@
-````markdown
 # QueryMind 🧠
 > Natural Language to SQL Platform
 
@@ -132,4 +131,3 @@ cd frontend && npm install && npm run dev
 cd backend && pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
-````
