@@ -10,9 +10,10 @@ RAG Pipelines · Event-Driven Architecture ·
 Production Security
 
 ## Architecture
+```
 ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
 │   Frontend   │────▶│   Backend    │────▶│  PostgreSQL  │
-│  React+Vite  │     │   FastAPI    │     │(temp schemas)│
+│  React+Vite  │     │   FastAPI    │     │  (temp schemas)│
 │  Tailwind    │     │              │     └──────────────┘
 └──────────────┘     │  ┌────────┐  │     ┌──────────────┐
                      │  │ Gemini │──┼────▶│    Redis     │
@@ -20,8 +21,10 @@ Production Security
                      │  ┌────────┐  │     └──────────────┘
                      │  │ChromaDB│  │     ┌──────────────┐
                      │  └────────┘  │────▶│    Kafka     │
-                     └──────────────┘     │(KRaft mode)  │
+                     └──────────────┘     │   (events)   │
                                           └──────────────┘
+```
+
 
 ## Services
 | Service        | Port | Purpose                                        |
