@@ -36,7 +36,7 @@ Production Security
 
 ## Quick Start
 # 1. Clone the repo
-git clone https://github.com/yourusername/querymind
+git clone https://github.com/dhruv-0512/QueryMind
 cd querymind
 
 # 2. Add your Gemini API key
