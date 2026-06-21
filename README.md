@@ -1,9 +1,9 @@
-# QueryMind 🧠
+# QueryMind 
 > Natural Language to SQL Platform
 
 Ask questions in plain English and get instant SQL results against your uploaded data.
 
-## 🎯 Built to demonstrate
+##  Built to demonstrate
 Backend Engineering · Distributed Systems · RAG Pipelines · Event-Driven Architecture · Production Security
 
 ## Architecture
