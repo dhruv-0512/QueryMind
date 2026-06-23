@@ -3,7 +3,7 @@ import logging
 from typing import Dict, Any, List
 import chromadb
 from app.config import settings
-from app.utils.embeddings import get_embedding, get_embeddings_batch
+from app.utils.embeddings import get_embedding, get_embeddings_batch, get_query_embedding
 
 logger = logging.getLogger(__name__)
 
@@ -48,9 +48,7 @@ class RagService:
         try:
             # Generate embeddings in batch (or sequentially if needed, but batch is faster)
             logger.info(f"Generating embeddings for {len(texts)} tables in database {db_id}...")
-            raw_embeddings = []
-            for text in texts:
-                raw_embeddings.append(get_embedding(text))
+            raw_embeddings = get_embeddings_batch(texts)
         except Exception as e:
             logger.error(f"Failed to generate embeddings during indexing: {e}")
             raise e
@@ -99,7 +97,7 @@ class RagService:
         self._ensure_connected()
 
         try:
-            query_vector = get_embedding(query)
+            query_vector = get_query_embedding(query)
             
             results = self.collection.query(
                 query_embeddings=[query_vector],

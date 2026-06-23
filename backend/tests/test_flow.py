@@ -5,40 +5,26 @@ import httpx
 
 BASE_URL = "http://localhost:8000"
 
-def create_test_db(filename="test_data.db"):
-    """Create a temporary SQLite database with a single table and mock rows."""
+def create_test_db(filename="customers.csv"):
+    """Create a temporary CSV file with mock rows."""
     if os.path.exists(filename):
         os.remove(filename)
     
-    conn = sqlite3.connect(filename)
-    cursor = conn.cursor()
-    cursor.execute("""
-        CREATE TABLE customers (
-            id INTEGER PRIMARY KEY,
-            name TEXT NOT NULL,
-            city TEXT NOT NULL,
-            sales_limit REAL
-        );
-    """)
-    cursor.execute("CREATE INDEX idx_customers_city ON customers(city);")
-    
-    # Seed data
-    cursor.executemany("""
-        INSERT INTO customers (name, city, sales_limit) VALUES (?, ?, ?);
-    """, [
-        ("Alice", "New York", 50000.0),
-        ("Bob", "Boston", 75000.0),
-        ("Charlie", "New York", 120000.0),
-        ("David", "San Francisco", 90000.0)
-    ])
-    
-    conn.commit()
-    conn.close()
-    print(f"Created local test SQLite database: {filename}")
+    import csv
+    with open(filename, mode='w', newline='', encoding='utf-8') as f:
+        writer = csv.writer(f)
+        writer.writerow(["id", "name", "city", "sales_limit"])
+        writer.writerows([
+            [1, "Alice", "New York", 50000.0],
+            [2, "Bob", "Boston", 75000.0],
+            [3, "Charlie", "New York", 120000.0],
+            [4, "David", "San Francisco", 90000.0]
+        ])
+    print(f"Created local test CSV file: {filename}")
 
 def run_tests():
-    # 1. Create SQLite DB
-    db_filename = "test_data.db"
+    # 1. Create CSV DB
+    db_filename = "customers.csv"
     create_test_db(db_filename)
     
     client = httpx.Client(base_url=BASE_URL, timeout=60.0)
@@ -103,12 +89,12 @@ def run_tests():
         # Update analyst headers
         analyst_headers = {"Authorization": f"Bearer {new_access_token}"}
 
-        # Step 5: Upload SQLite Database & Index Schema
-        print("\n[Step 5] Uploading SQLite Database file...")
+        # Step 5: Upload CSV Database & Index Schema
+        print("\n[Step 5] Uploading CSV Database file...")
         with open(db_filename, "rb") as f:
             upload_res = client.post(
                 "/database/upload",
-                files={"file": (db_filename, f, "application/x-sqlite3")},
+                files={"file": (db_filename, f, "text/csv")},
                 headers={"Authorization": f"Bearer {new_access_token}"}
             )
         assert upload_res.status_code == 201, f"Upload failed: {upload_res.text}"

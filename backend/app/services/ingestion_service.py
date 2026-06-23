@@ -1,8 +1,12 @@
 import io
 import re
+import time
+import uuid
 import logging
+from decimal import Decimal
 from typing import Tuple, List, Dict, Any
 import pandas as pd
+import numpy as np
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -59,7 +63,7 @@ async def load_dataframe_to_pg(
     df: pd.DataFrame,
 ) -> str:
     """
-    Create a table in the temp schema and load the DataFrame rows.
+    Create a table in the temp schema and load the DataFrame rows via COPY.
     Returns the full qualified table name.
     """
     safe_schema = safe_identifier(schema_name)
@@ -69,6 +73,7 @@ async def load_dataframe_to_pg(
     if df.empty:
         raise ValueError("Uploaded file contains no data rows.")
 
+    df = df.copy()
     df.columns = [safe_identifier(c) for c in df.columns]
 
     # Build CREATE TABLE DDL
@@ -82,21 +87,51 @@ async def load_dataframe_to_pg(
     await session.execute(text(ddl))
     await session.commit()
 
-    # Insert data in batches using COPY-style insert
-    batch_size = 500
-    cols_quoted = [f'"{c}"' for c in df.columns]
-    placeholder = ", ".join([f":{c}" for c in df.columns])
+    # Bulk load via PostgreSQL COPY protocol (asyncpg)
+    t0 = time.time()
 
-    for start in range(0, len(df), batch_size):
-        batch = df.iloc[start:start + batch_size]
-        # Replace NaN with None for PostgreSQL compatibility
-        rows = batch.where(pd.notna(batch), None).to_dict(orient="records")
-        insert_sql = f'INSERT INTO {full_name} ({", ".join(cols_quoted)}) VALUES ({placeholder})'
-        for row in rows:
-            await session.execute(text(insert_sql), row)
-        await session.commit()
+    # Convert DataFrame to list of tuples, replacing NaN/NaT with None
+    df = df.replace({np.nan: None, pd.NaT: None})
+    # Convert numpy types to native Python types for asyncpg
+    rows = []
+    for _, row in df.iterrows():
+        clean_row = []
+        for val in row:
+            if val is None:
+                clean_row.append(None)
+            elif isinstance(val, (np.integer,)):
+                clean_row.append(int(val))
+            elif isinstance(val, (np.floating,)):
+                clean_row.append(float(val))
+            elif isinstance(val, (np.bool_,)):
+                clean_row.append(bool(val))
+            elif isinstance(val, (pd.Timestamp,)):
+                clean_row.append(val.to_pydatetime())
+            elif isinstance(val, (np.datetime64,)):
+                clean_row.append(pd.Timestamp(val).to_pydatetime())
+            elif isinstance(val, (bytes,)):
+                clean_row.append(val)
+            elif isinstance(val, (np.ndarray,)):
+                clean_row.append(val.tolist())
+            else:
+                clean_row.append(val)
+        rows.append(tuple(clean_row))
 
-    logger.info(f"Loaded {len(df)} rows into {full_name}")
+    # Get raw asyncpg connection from the engine for COPY
+    async with session.bind.connect() as raw_conn:
+        pg_conn = await raw_conn.get_raw_connection()
+        pg_conn = pg_conn.driver_connection
+
+        # Use asyncpg COPY for ultra-fast bulk insert
+        await pg_conn.copy_records_to_table(
+            safe_table,
+            records=rows,
+            columns=list(df.columns),
+            schema_name=safe_schema,
+        )
+
+    elapsed = time.time() - t0
+    logger.info(f"Loaded {len(df)} rows into {full_name} via COPY in {elapsed:.2f}s ({len(df)/elapsed:.0f} rows/s)")
     return full_name
 
 
@@ -233,6 +268,10 @@ async def execute_pg_query(
                 if hasattr(val, "isoformat"):
                     row_dict[key] = val.isoformat()
                 elif isinstance(val, (bytes, memoryview)):
+                    row_dict[key] = str(val)
+                elif isinstance(val, Decimal):
+                    row_dict[key] = float(val)
+                elif isinstance(val, uuid.UUID):
                     row_dict[key] = str(val)
 
         return data, latency

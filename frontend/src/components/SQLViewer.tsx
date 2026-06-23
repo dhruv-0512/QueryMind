@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Copy, Check, Terminal, HelpCircle } from 'lucide-react';
 
 interface SQLViewerProps {
@@ -7,8 +7,37 @@ interface SQLViewerProps {
   confidence: number;
 }
 
+const SQL_KEYWORDS = new Set([
+  'SELECT', 'FROM', 'WHERE', 'AND', 'OR', 'NOT', 'IN', 'LIKE', 'BETWEEN', 'IS', 'NULL',
+  'JOIN', 'INNER', 'LEFT', 'RIGHT', 'OUTER', 'CROSS', 'ON', 'AS',
+  'GROUP', 'BY', 'ORDER', 'ASC', 'DESC', 'HAVING', 'LIMIT', 'OFFSET', 'UNION', 'ALL',
+  'INSERT', 'INTO', 'VALUES', 'UPDATE', 'SET', 'DELETE', 'CREATE', 'TABLE', 'DROP', 'ALTER',
+  'WITH', 'DISTINCT', 'COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'COALESCE', 'CAST', 'CASE',
+  'WHEN', 'THEN', 'ELSE', 'END', 'EXISTS', 'EXCEPT', 'INTERSECT', 'OVER', 'PARTITION',
+  'FETCH', 'FIRST', 'NEXT', 'ROWS', 'ONLY', 'ILIKE',
+]);
+
+function highlightSQL(sql: string): React.ReactNode[] {
+  const tokens = sql.split(/(\b\w+\b|'[^']*'|"[^"]*"|`[^`]*`|--[^\n]*|\n|.)/g);
+  return tokens.map((token, i) => {
+    if (!token) return null;
+    if (/^--/.test(token)) return <span key={i} className="text-slate-600 italic">{token}</span>;
+    if (/^'[^']*'$/.test(token) || /^"[^"]*"$/.test(token)) {
+      return <span key={i} className="text-amber-300">{token}</span>;
+    }
+    if (/^\d+\.?\d*$/.test(token)) return <span key={i} className="text-purple-300">{token}</span>;
+    if (SQL_KEYWORDS.has(token.toUpperCase()) && /^[A-Za-z]+$/.test(token)) {
+      return <span key={i} className="text-indigo-400 font-semibold">{token.toUpperCase()}</span>;
+    }
+    if (token === '\n') return <br key={i} />;
+    return <span key={i}>{token}</span>;
+  });
+}
+
 export const SQLViewer: React.FC<SQLViewerProps> = ({ sql, explanation, confidence }) => {
   const [copied, setCopied] = useState(false);
+
+  const highlighted = useMemo(() => highlightSQL(sql), [sql]);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(sql);
@@ -24,14 +53,13 @@ export const SQLViewer: React.FC<SQLViewerProps> = ({ sql, explanation, confiden
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-2 text-indigo-400">
           <Terminal size={18} />
           <h3 className="text-sm font-semibold uppercase tracking-wider">Generated Query</h3>
         </div>
-        
+
         <div className="flex items-center gap-3">
-          {/* Confidence Score */}
           <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-semibold ${getConfidenceColor(confidence)}`}>
             Confidence: {Math.round(confidence * 100)}%
           </div>
@@ -55,19 +83,17 @@ export const SQLViewer: React.FC<SQLViewerProps> = ({ sql, explanation, confiden
         </div>
       </div>
 
-      {/* SQL Code Block */}
-      <pre className="code-block whitespace-pre-wrap break-all relative">
-        <code className="text-emerald-300">{sql}</code>
+      <pre className="code-block whitespace-pre-wrap break-words relative">
+        <code>{highlighted}</code>
       </pre>
 
-      {/* Explanation Box */}
       <div className="flex gap-3 p-4 bg-indigo-950/20 border border-indigo-900/30 rounded-xl">
         <div className="text-indigo-400 mt-0.5">
           <HelpCircle size={18} />
         </div>
-        <div className="space-y-1">
+        <div className="space-y-1 min-w-0">
           <h4 className="text-xs font-semibold uppercase tracking-wider text-indigo-400">Model Explanation</h4>
-          <p className="text-xs text-slate-300 leading-relaxed">{explanation}</p>
+          <p className="text-xs text-slate-300 leading-relaxed break-words">{explanation}</p>
         </div>
       </div>
     </div>

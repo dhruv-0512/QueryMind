@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     # LLM Configuration
     GEMINI_API_KEY: str
 
+    # Embeddings: local (no quota), gemini (API), auto (gemini with local fallback)
+    EMBEDDING_PROVIDER: str = "local"
+
     # Security Configurations
     JWT_SECRET_KEY: str
     JWT_ALGORITHM: str = "HS256"

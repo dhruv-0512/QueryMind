@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
+import asyncio
 from app.database import get_db
 from app.models.user import User
 from app.models.database_connection import DatabaseConnection
@@ -15,6 +16,7 @@ from app.middleware.auth_middleware import get_current_user
 from app.schemas.query import QueryRequest, QueryResponse
 from app.services.rag_service import rag_service
 from app.services.sql_service import sql_service
+from app.services.sql_example_retrieval_service import sql_example_retrieval_service
 from app.services.cache_service import cache_service
 from app.services.kafka_service import kafka_service
 from app.utils.sql_validator import validate_sql_query
@@ -87,19 +89,44 @@ async def execute_nl_query(
         except Exception as e:
             logger.error(f"Cache parse error for key {cache_key}: {e}")
 
-    # Step 2: RAG Schema Retrieval
+    # Step 2: Parallel retrieval (Schema + SQL Examples)
     try:
         t0 = time.time()
-        schema_context = await rag_service.retrieve_schema_context(str(request.db_id), question)
-        logger.info(f"TIMING RAG retrieval took {time.time() - t0:.3f}s")
+        schema_task = rag_service.retrieve_schema_context(str(request.db_id), question)
+        example_task = sql_example_retrieval_service.retrieve_examples(question, limit=5)
+        schema_context, retrieved_examples = await asyncio.gather(schema_task, example_task)
+        logger.info(f"TIMING Parallel retrieval took {time.time() - t0:.3f}s")
     except Exception as e:
-        logger.error(f"RAG retrieval failed: {e}")
-        raise HTTPException(status_code=500, detail="Failed to retrieve database schema context.")
+        logger.error(f"Parallel retrieval failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed parallel retrieval: {str(e)}")
+
+    # Publish Kafka events for SQL examples retrieval and completion
+    await kafka_service.publish_event(
+        topic="query-events",
+        event_type="SQLExampleRetrieved",
+        user_id=str(user_id),
+        payload={
+            "db_id": str(request.db_id),
+            "question": question,
+            "examples": retrieved_examples
+        }
+    )
+    await kafka_service.publish_event(
+        topic="query-events",
+        event_type="RetrievalCompleted",
+        user_id=str(user_id),
+        payload={
+            "db_id": str(request.db_id),
+            "question": question,
+            "schema_found": bool(schema_context),
+            "examples_count": len(retrieved_examples)
+        }
+    )
 
     # Step 3: SQL Generation
     try:
         t0 = time.time()
-        gen_result = await sql_service.generate_sql(schema_context, question)
+        gen_result = await sql_service.generate_sql(schema_context, question, retrieved_examples)
         logger.info(f"TIMING SQL generation took {time.time() - t0:.3f}s")
         sql = gen_result["sql"]
         explanation = gen_result["explanation"]
