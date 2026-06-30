@@ -62,6 +62,36 @@ class SqlService:
                 cols.append(m.group(1))
         return cols
 
+    def _quote_identifier(self, identifier: str) -> str:
+        escaped = identifier.replace('"', '""')
+        return f'"{escaped}"'
+
+    def _quote_schema_identifiers(self, sql: str, table_name: str, columns: List[str]) -> str:
+        quoted = sql
+        identifiers = [table_name, *columns]
+        for identifier in sorted(set(identifiers), key=len, reverse=True):
+            if not identifier:
+                continue
+            replacement = self._quote_identifier(identifier)
+            quoted = re.sub(
+                rf'(?<!["\w]){re.escape(identifier)}(?!["\w])',
+                replacement,
+                quoted,
+                flags=re.IGNORECASE,
+            )
+        return quoted
+
+    def _normalize_string_literals(self, sql: str, columns: List[str]) -> str:
+        column_names = {col.lower() for col in columns}
+
+        def replace_double_quoted(match: re.Match) -> str:
+            inner = match.group(1)
+            if inner.lower() in column_names:
+                return match.group(0)
+            return "'" + inner.replace("'", "''") + "'"
+
+        return re.sub(r'"([^"]+)"', replace_double_quoted, sql)
+
     def _match_column(self, keyword: str, available_cols: List[str]) -> str:
         kw_lower = keyword.lower()
         for col in available_cols:
