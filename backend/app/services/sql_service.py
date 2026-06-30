@@ -249,12 +249,15 @@ Return JSON: {{"sql": "...", "explanation": "...", "confidence": 0.0-1.0}}
         prompt = self._build_rag_prompt(schema_context, user_question, retrieved_examples)
 
         try:
-            response = await self.model.generate_content_async(
-                prompt,
-                generation_config={
-                    "response_mime_type": "application/json",
-                    "temperature": 0.0,
-                },
+            response = await asyncio.wait_for(
+                self.model.generate_content_async(
+                    prompt,
+                    generation_config={
+                        "response_mime_type": "application/json",
+                        "temperature": 0.0,
+                    },
+                ),
+                timeout=25.0
             )
             raw_text = response.text.strip()
             result = json.loads(raw_text)

@@ -1,38 +1,21 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Send, AlertCircle, Database, HelpCircle, Table, BarChart2, Zap, Clock, ShieldCheck, RefreshCw } from 'lucide-react';
 import { api } from '../services/api';
 import { SQLViewer } from '../components/SQLViewer';
 import { ResultsTable } from '../components/ResultsTable';
 import { ChartView } from '../components/ChartView';
 
-interface DbConn {
-  id: string;
-  name: string;
-}
-
-interface QueryWorkspaceProps {
-  selectedDbId: string | null;
-  selectedDbName: string | null;
-}
-
-export const QueryWorkspace: React.FC<QueryWorkspaceProps> = ({ selectedDbId, selectedDbName: _selectedDbName }) => {
-  const [databases, setDatabases] = useState<DbConn[]>([]);
-  const [activeDbId, setActiveDbId] = useState<string>('');
+export const QueryWorkspace = ({ selectedDbId }) => {
+  const [databases, setDatabases] = useState([]);
+  const [activeDbId, setActiveDbId] = useState('');
   const [question, setQuestion] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   
   // Results State
-  const [queryResult, setQueryResult] = useState<{
-    sql: string;
-    explanation: string;
-    confidence: number;
-    results: Record<string, any>[] | null;
-    execution_time: number;
-    cached: boolean;
-  } | null>(null);
+  const [queryResult, setQueryResult] = useState(null);
 
-  const [activeTab, setActiveTab] = useState<'table' | 'chart'>('table');
+  const [activeTab, setActiveTab] = useState('table');
 
   useEffect(() => {
     const fetchDatabases = async () => {
@@ -46,14 +29,14 @@ export const QueryWorkspace: React.FC<QueryWorkspaceProps> = ({ selectedDbId, se
         } else if (data.length > 0) {
           setActiveDbId(data[0].id);
         }
-      } catch (err: any) {
+      } catch (err) {
         console.error('Failed to retrieve databases:', err);
       }
     };
     fetchDatabases();
   }, [selectedDbId]);
 
-  const handleQuery = async (e: React.FormEvent) => {
+  const handleQuery = async (e) => {
     e.preventDefault();
     if (!activeDbId) {
       setErrorMsg('Please select a database to query.');
@@ -71,7 +54,7 @@ export const QueryWorkspace: React.FC<QueryWorkspaceProps> = ({ selectedDbId, se
         question: question.trim()
       });
       setQueryResult(response);
-    } catch (err: any) {
+    } catch (err) {
       setErrorMsg(err.message || 'An error occurred during query execution.');
     } finally {
       setIsLoading(false);

@@ -1,19 +1,15 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { api } from '../services/api';
 import { Mail, Lock, UserPlus, AlertCircle, CheckCircle, ShieldAlert } from 'lucide-react';
 
-interface RegisterProps {
-  onNavigateToLogin: () => void;
-}
-
-export const Register: React.FC<RegisterProps> = ({ onNavigateToLogin }) => {
+export const Register = ({ onNavigateToLogin }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState<'admin' | 'analyst' | 'viewer'>('viewer');
-  const [statusMsg, setStatusMsg] = useState<{ type: 'error' | 'success' | ''; text: string }>({ type: '', text: '' });
+  const [role, setRole] = useState('viewer');
+  const [statusMsg, setStatusMsg] = useState({ type: '', text: '' });
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setStatusMsg({ type: '', text: '' });
     
@@ -33,7 +29,7 @@ export const Register: React.FC<RegisterProps> = ({ onNavigateToLogin }) => {
       setTimeout(() => {
         onNavigateToLogin();
       }, 2000);
-    } catch (err: any) {
+    } catch (err) {
       setStatusMsg({
         type: 'error',
         text: err.message || 'Registration failed. Please check your credentials.'
@@ -109,7 +105,7 @@ export const Register: React.FC<RegisterProps> = ({ onNavigateToLogin }) => {
               <ShieldAlert size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
               <select
                 value={role}
-                onChange={(e) => setRole(e.target.value as any)}
+                onChange={(e) => setRole(e.target.value)}
                 className="input-field pl-11 appearance-none bg-slate-950 outline-none"
                 disabled={isLoading}
               >

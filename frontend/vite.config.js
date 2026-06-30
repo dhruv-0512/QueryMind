@@ -7,7 +7,7 @@ export default defineConfig({
     target: 'es2020',
     rollupOptions: {
       output: {
-        manualChunks(id: string) {
+        manualChunks(id) {
           if (id.includes('node_modules/react-dom') || id.includes('node_modules/react/')) return 'vendor'
           if (id.includes('node_modules/recharts')) return 'charts'
           if (id.includes('node_modules/lucide-react')) return 'icons'

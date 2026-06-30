@@ -116,7 +116,7 @@ cd backend && pip install -r requirements.txt && uvicorn app.main:app --reload
 
 ## Tech Stack
 
-**Frontend:** React 19, TypeScript, Vite, Tailwind CSS 3, Recharts, Lucide Icons
+**Frontend:** React 19, JavaScript (ES2023), Vite, Tailwind CSS 3, Recharts, Lucide Icons
 **Backend:** FastAPI, SQLAlchemy 2.0 (async), asyncpg (COPY), Pandas, Alembic
 **Infra:** PostgreSQL 16, Redis 7, Kafka 7.6, ChromaDB, Docker Compose
 **AI:** Google Gemini (SQL generation + embeddings), BGE-small-en (local embeddings fallback), fastembed

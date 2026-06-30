@@ -1,18 +1,14 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend, ResponsiveContainer } from 'recharts';
 import { BarChart3, LineChart as LineIcon, Settings } from 'lucide-react';
 
-interface ChartViewProps {
-  data: Record<string, any>[] | null;
-}
-
-export const ChartView: React.FC<ChartViewProps> = ({ data }) => {
-  const [chartType, setChartType] = useState<'bar' | 'line'>('bar');
-  const [xAxisKey, setXAxisKey] = useState<string>('');
-  const [yAxisKey, setYAxisKey] = useState<string>('');
+export const ChartView = ({ data }) => {
+  const [chartType, setChartType] = useState('bar');
+  const [xAxisKey, setXAxisKey] = useState('');
+  const [yAxisKey, setYAxisKey] = useState('');
 
   const { numericKeys, stringKeys } = useMemo(() => {
-    if (!data || data.length === 0) return { numericKeys: [] as string[], stringKeys: [] as string[] };
+    if (!data || data.length === 0) return { numericKeys: [], stringKeys: [] };
     const sample = data[0];
     const keys = Object.keys(sample);
     const numKeys = keys.filter((key) =>
@@ -40,6 +36,11 @@ export const ChartView: React.FC<ChartViewProps> = ({ data }) => {
     }
   }, [data, numericKeys, stringKeys]);
 
+  const chartData = useMemo(() => {
+    if (!data) return [];
+    return data.map((row) => ({ ...row, [yAxisKey]: Number(row[yAxisKey]) }));
+  }, [data, yAxisKey]);
+
   if (!data || data.length === 0) return null;
 
   if (numericKeys.length === 0) {
@@ -49,11 +50,6 @@ export const ChartView: React.FC<ChartViewProps> = ({ data }) => {
       </div>
     );
   }
-
-  const chartData = useMemo(() =>
-    data.map((row) => ({ ...row, [yAxisKey]: Number(row[yAxisKey]) })),
-    [data, yAxisKey]
-  );
 
   return (
     <div className="space-y-6">

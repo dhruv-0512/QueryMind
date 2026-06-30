@@ -1,25 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Database, Trash2, Calendar, DatabaseZap, ShieldAlert, Loader2, ArrowRight, Layers, FileType } from 'lucide-react';
 import { api } from '../services/api';
 import { DatabaseUpload } from '../components/DatabaseUpload';
 
-interface DbConn {
-  id: string;
-  name: string;
-  schema_name: string;
-  table_name: string;
-  row_count: number;
-  file_format: string;
-  created_at: string;
-}
-
-interface DashboardProps {
-  userRole: string;
-  onSelectDatabase: (id: string, name: string) => void;
-}
-
-export const Dashboard: React.FC<DashboardProps> = ({ userRole, onSelectDatabase }) => {
-  const [databases, setDatabases] = useState<DbConn[]>([]);
+export const Dashboard = ({ userRole, onSelectDatabase }) => {
+  const [databases, setDatabases] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState('');
 
@@ -29,7 +14,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onSelectDatabase
     try {
       const data = await api.get('/database/list');
       setDatabases(data);
-    } catch (err: any) {
+    } catch (err) {
       setErrorMsg(err.message || 'Failed to load databases.');
     } finally {
       setIsLoading(false);
@@ -40,7 +25,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onSelectDatabase
     fetchDatabases();
   }, [fetchDatabases]);
 
-  const handleDelete = async (id: string, name: string) => {
+  const handleDelete = async (id, name) => {
     if (!window.confirm(`Are you sure you want to delete the database "${name}" and all of its schema vector indexes?`)) {
       return;
     }
@@ -48,7 +33,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onSelectDatabase
     try {
       await api.delete(`/database/${id}`);
       setDatabases((prev) => prev.filter((db) => db.id !== id));
-    } catch (err: any) {
+    } catch (err) {
       alert(err.message || 'Failed to delete database.');
     }
   };

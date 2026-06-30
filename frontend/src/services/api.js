@@ -1,10 +1,5 @@
 const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
-export interface TokenPair {
-  access_token: string;
-  refresh_token: string;
-}
-
 export const getTokens = () => {
   return {
     accessToken: localStorage.getItem('access_token'),
@@ -12,7 +7,7 @@ export const getTokens = () => {
   };
 };
 
-export const setTokens = (access: string, refresh: string) => {
+export const setTokens = (access, refresh) => {
   localStorage.setItem('access_token', access);
   localStorage.setItem('refresh_token', refresh);
 };
@@ -25,18 +20,18 @@ export const clearTokens = () => {
 };
 
 let isRefreshing = false;
-let refreshSubscribers: ((token: string) => void)[] = [];
+let refreshSubscribers = [];
 
-const subscribeTokenRefresh = (cb: (token: string) => void) => {
+const subscribeTokenRefresh = (cb) => {
   refreshSubscribers.push(cb);
 };
 
-const onRefreshed = (token: string) => {
+const onRefreshed = (token) => {
   refreshSubscribers.forEach((cb) => cb(token));
   refreshSubscribers = [];
 };
 
-async function apiRequest(path: string, options: RequestInit = {}): Promise<any> {
+async function apiRequest(path, options = {}) {
   const { accessToken } = getTokens();
   
   const headers = new Headers(options.headers || {});
@@ -90,7 +85,7 @@ async function apiRequest(path: string, options: RequestInit = {}): Promise<any>
           isRefreshing = false;
           clearTokens();
           window.dispatchEvent(new Event('auth_failed'));
-          throw new Error('Session expired. Please log in again.');
+          throw new Error('Session expired. Please log in again.', { cause: err });
         }
       }
 
@@ -122,19 +117,19 @@ async function apiRequest(path: string, options: RequestInit = {}): Promise<any>
     }
 
     return await response.json();
-  } catch (error: any) {
+  } catch (error) {
     loggerError(error);
     throw error;
   }
 }
 
-function loggerError(error: any) {
+function loggerError(error) {
   console.error("API Call error:", error.message || error);
 }
 
 export const api = {
-  get: (path: string) => apiRequest(path, { method: 'GET' }),
-  post: (path: string, body: any) => apiRequest(path, { method: 'POST', body: JSON.stringify(body) }),
-  postMultipart: (path: string, formData: FormData) => apiRequest(path, { method: 'POST', body: formData }),
-  delete: (path: string) => apiRequest(path, { method: 'DELETE' }),
+  get: (path) => apiRequest(path, { method: 'GET' }),
+  post: (path, body) => apiRequest(path, { method: 'POST', body: JSON.stringify(body) }),
+  postMultipart: (path, formData) => apiRequest(path, { method: 'POST', body: formData }),
+  delete: (path) => apiRequest(path, { method: 'DELETE' }),
 };

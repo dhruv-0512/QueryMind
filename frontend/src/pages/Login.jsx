@@ -1,19 +1,14 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { api, setTokens } from '../services/api';
 import { Mail, Lock, LogIn, AlertCircle } from 'lucide-react';
 
-interface LoginProps {
-  onLoginSuccess: (role: string, email: string) => void;
-  onNavigateToRegister: () => void;
-}
-
-export const Login: React.FC<LoginProps> = ({ onLoginSuccess, onNavigateToRegister }) => {
+export const Login = ({ onLoginSuccess, onNavigateToRegister }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setErrorMsg('');
     setIsLoading(true);
@@ -32,7 +27,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, onNavigateToRegist
       localStorage.setItem('user_email', email);
 
       onLoginSuccess(role, email);
-    } catch (err: any) {
+    } catch (err) {
       setErrorMsg(err.message || 'Login failed. Please check your credentials.');
     } finally {
       setIsLoading(false);

@@ -1,24 +1,19 @@
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { ChevronLeft, ChevronRight, Copy, Check } from 'lucide-react';
 
-interface ResultsTableProps {
-  data: Record<string, any>[] | null;
-  isLoading?: boolean;
-}
-
-function formatColumnHeader(col: string): string {
+function formatColumnHeader(col) {
   return col
     .replace(/_/g, ' ')
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-function isNumeric(val: any): boolean {
+function isNumeric(val) {
   if (typeof val === 'number') return true;
   if (typeof val === 'bigint') return true;
   return false;
 }
 
-function isDateLike(val: any): boolean {
+function isDateLike(val) {
   if (val instanceof Date) return true;
   if (typeof val === 'string') {
     const d = new Date(val);
@@ -29,7 +24,7 @@ function isDateLike(val: any): boolean {
   return false;
 }
 
-function formatCellValue(val: any): string {
+function formatCellValue(val) {
   if (val === null || val === undefined) return '';
   if (typeof val === 'number') {
     if (Number.isInteger(val)) return val.toLocaleString();
@@ -44,8 +39,8 @@ function formatCellValue(val: any): string {
   return String(val);
 }
 
-function getColumnAlignment(columns: string[], data: Record<string, any>[]): Record<string, 'left' | 'right'> {
-  const alignments: Record<string, 'left' | 'right'> = {};
+function getColumnAlignment(columns, data) {
+  const alignments = {};
   for (const col of columns) {
     const sample = data.slice(0, 20).map((r) => r[col]).filter((v) => v !== null && v !== undefined);
     const allNumeric = sample.length > 0 && sample.every((v) => isNumeric(v));
@@ -54,10 +49,20 @@ function getColumnAlignment(columns: string[], data: Record<string, any>[]): Rec
   return alignments;
 }
 
-export const ResultsTable: React.FC<ResultsTableProps> = ({ data, isLoading }) => {
+export const ResultsTable = ({ data, isLoading }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [rowsPerPage] = useState(25);
-  const [copiedCell, setCopiedCell] = useState<string | null>(null);
+  const [copiedCell, setCopiedCell] = useState(null);
+
+  const columns = useMemo(() => (data && data.length > 0 ? Object.keys(data[0]) : []), [data]);
+  const colAlignments = useMemo(() => (data && columns.length > 0 ? getColumnAlignment(columns, data) : {}), [data, columns]);
+
+  const totalPages = Math.ceil((data ? data.length : 0) / rowsPerPage);
+  const currentRows = useMemo(() => {
+    if (!data) return [];
+    const start = (currentPage - 1) * rowsPerPage;
+    return data.slice(start, start + rowsPerPage);
+  }, [data, currentPage, rowsPerPage]);
 
   if (isLoading) {
     return (
@@ -77,16 +82,7 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({ data, isLoading }) =
     );
   }
 
-  const columns = Object.keys(data[0]);
-  const colAlignments = useMemo(() => getColumnAlignment(columns, data), [data, columns]);
-
-  const totalPages = Math.ceil(data.length / rowsPerPage);
-  const currentRows = useMemo(() => {
-    const start = (currentPage - 1) * rowsPerPage;
-    return data.slice(start, start + rowsPerPage);
-  }, [data, currentPage, rowsPerPage]);
-
-  const handleCopy = (val: any, cellId: string) => {
+  const handleCopy = (val, cellId) => {
     navigator.clipboard.writeText(formatCellValue(val));
     setCopiedCell(cellId);
     setTimeout(() => setCopiedCell(null), 1500);
@@ -205,7 +201,7 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({ data, isLoading }) =
       {totalPages > 1 && (
         <div className="flex items-center justify-center gap-1">
           {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
-            let pageNum: number;
+            let pageNum;
             if (totalPages <= 7) {
               pageNum = i + 1;
             } else if (currentPage <= 4) {
@@ -222,7 +218,7 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({ data, isLoading }) =
             if (isEllipsis) {
               return (
                 <span key={`ellipsis-${i}`} className="px-2 text-slate-600 text-xs">
-                  \u2026
+                  {'\u2026'}
                 </span>
               );
             }

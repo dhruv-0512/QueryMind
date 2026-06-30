@@ -1,22 +1,9 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { HelpCircle, Calendar, ShieldCheck, Clock, Terminal, AlertTriangle, AlertOctagon, CheckCircle2, Search } from 'lucide-react';
 import { api } from '../services/api';
 
-interface QueryRecord {
-  id: string;
-  db_id: string;
-  question: string;
-  sql: string;
-  explanation: string;
-  confidence: number;
-  execution_time: number;
-  status: 'success' | 'failed' | 'rejected';
-  error_message: string | null;
-  created_at: string;
-}
-
-export const QueryHistory: React.FC = () => {
-  const [history, setHistory] = useState<QueryRecord[]>([]);
+export const QueryHistory = () => {
+  const [history, setHistory] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState('');
@@ -28,7 +15,7 @@ export const QueryHistory: React.FC = () => {
       try {
         const data = await api.get('/query/history');
         setHistory(data);
-      } catch (err: any) {
+      } catch (err) {
         setErrorMsg(err.message || 'Failed to retrieve query history.');
       } finally {
         setIsLoading(false);
@@ -45,7 +32,7 @@ export const QueryHistory: React.FC = () => {
     [history, searchTerm]
   );
 
-  const getStatusBadge = (status: 'success' | 'failed' | 'rejected') => {
+  const getStatusBadge = (status) => {
     switch (status) {
       case 'success':
         return (

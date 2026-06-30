@@ -1,21 +1,17 @@
-import React, { useState, useRef } from 'react';
+import { useState, useRef } from 'react';
 import { Upload, File, Database, AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
 import { api } from '../services/api';
 
-interface DatabaseUploadProps {
-  onUploadSuccess: () => void;
-}
-
 const ALLOWED_EXTENSIONS = ['.csv', '.xls', '.xlsx', '.json'];
 
-export const DatabaseUpload: React.FC<DatabaseUploadProps> = ({ onUploadSuccess }) => {
+export const DatabaseUpload = ({ onUploadSuccess }) => {
   const [dragActive, setDragActive] = useState(false);
-  const [file, setFile] = useState<File | null>(null);
-  const [statusMsg, setStatusMsg] = useState<{ type: 'error' | 'success' | ''; text: string }>({ type: '', text: '' });
+  const [file, setFile] = useState(null);
+  const [statusMsg, setStatusMsg] = useState({ type: '', text: '' });
   const [isUploading, setIsUploading] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef(null);
 
-  const handleDrag = (e: React.DragEvent) => {
+  const handleDrag = (e) => {
     e.preventDefault();
     e.stopPropagation();
     if (e.type === "dragenter" || e.type === "dragover") {
@@ -25,7 +21,7 @@ export const DatabaseUpload: React.FC<DatabaseUploadProps> = ({ onUploadSuccess 
     }
   };
 
-  const validateFile = (selectedFile: File): boolean => {
+  const validateFile = (selectedFile) => {
     const name = selectedFile.name.toLowerCase();
     const valid = ALLOWED_EXTENSIONS.some(ext => name.endsWith(ext));
     if (!valid) {
@@ -41,7 +37,7 @@ export const DatabaseUpload: React.FC<DatabaseUploadProps> = ({ onUploadSuccess 
     return true;
   };
 
-  const handleDrop = (e: React.DragEvent) => {
+  const handleDrop = (e) => {
     e.preventDefault();
     e.stopPropagation();
     setDragActive(false);
@@ -50,7 +46,7 @@ export const DatabaseUpload: React.FC<DatabaseUploadProps> = ({ onUploadSuccess 
     }
   };
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleChange = (e) => {
     e.preventDefault();
     if (e.target.files && e.target.files[0]) {
       validateFile(e.target.files[0]);
@@ -77,7 +73,7 @@ export const DatabaseUpload: React.FC<DatabaseUploadProps> = ({ onUploadSuccess 
       });
       setFile(null);
       onUploadSuccess();
-    } catch (err: any) {
+    } catch (err) {
       setStatusMsg({
         type: 'error',
         text: err.message || 'File upload and indexing failed.'

@@ -1,38 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Shield, Users, ScrollText, BarChart3, Clock, HelpCircle, HardDrive, RefreshCw } from 'lucide-react';
 import { api } from '../services/api';
 
-interface UserData {
-  id: string;
-  email: string;
-  role: string;
-  created_at: string;
-}
-
-interface AuditRecord {
-  id: string;
-  user_id: string | null;
-  event_type: string;
-  payload: Record<string, any>;
-  created_at: string;
-}
-
-interface SystemStats {
-  total_queries: number;
-  cache_hits: number;
-  query_executions: number;
-  cache_hit_rate: number;
-  avg_latency_seconds: number;
-}
-
-export const Admin: React.FC = () => {
-  const [users, setUsers] = useState<UserData[]>([]);
-  const [auditLogs, setAuditLogs] = useState<AuditRecord[]>([]);
-  const [stats, setStats] = useState<SystemStats | null>(null);
+export const Admin = () => {
+  const [users, setUsers] = useState([]);
+  const [auditLogs, setAuditLogs] = useState([]);
+  const [stats, setStats] = useState(null);
   
   const [isLoading, setIsLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState('');
-  const [activeSubTab, setActiveSubTab] = useState<'users' | 'logs'>('users');
+  const [activeSubTab, setActiveSubTab] = useState('users');
 
   useEffect(() => {
     const fetchAdminData = async () => {
@@ -47,7 +24,7 @@ export const Admin: React.FC = () => {
         setUsers(usersData);
         setAuditLogs(logsData);
         setStats(statsData);
-      } catch (err: any) {
+      } catch (err) {
         setErrorMsg(err.message || 'Failed to retrieve admin control dashboard logs.');
       } finally {
         setIsLoading(false);

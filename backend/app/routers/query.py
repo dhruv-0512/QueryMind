@@ -92,12 +92,19 @@ async def execute_nl_query(
     # Step 2: Parallel retrieval (Schema + SQL Examples)
     try:
         t0 = time.time()
-        schema_task = rag_service.retrieve_schema_context(str(request.db_id), question)
-        example_task = sql_example_retrieval_service.retrieve_examples(question, limit=5)
-        schema_context, retrieved_examples = await asyncio.gather(schema_task, example_task)
+        schema_context, retrieved_examples = await asyncio.wait_for(
+            asyncio.gather(
+                rag_service.retrieve_schema_context(str(request.db_id), question),
+                sql_example_retrieval_service.retrieve_examples(question, limit=5)
+            ),
+            timeout=60.0
+        )
         logger.info(f"TIMING Parallel retrieval took {time.time() - t0:.3f}s")
+    except asyncio.TimeoutError:
+        logger.error("Parallel retrieval timed out after 60s")
+        raise HTTPException(status_code=500, detail="Parallel retrieval timed out. Please try again.")
     except Exception as e:
-        logger.error(f"Parallel retrieval failed: {e}")
+        logger.error(f"Parallel retrieval failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed parallel retrieval: {str(e)}")
 
     # Publish Kafka events for SQL examples retrieval and completion

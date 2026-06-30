@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, Suspense, lazy } from 'react';
+import { useState, useEffect, useCallback, useMemo, Suspense, lazy } from 'react';
 import { Database, History, Shield, LogOut, Terminal, User, Menu, X } from 'lucide-react';
 import { clearTokens, getTokens } from './services/api';
 
@@ -9,17 +9,15 @@ const QueryWorkspace = lazy(() => import('./pages/QueryWorkspace').then(m => ({ 
 const QueryHistory = lazy(() => import('./pages/QueryHistory').then(m => ({ default: m.QueryHistory })));
 const Admin = lazy(() => import('./pages/Admin').then(m => ({ default: m.Admin })));
 
-type Page = 'login' | 'register' | 'dashboard' | 'workspace' | 'history' | 'admin';
-
-const App: React.FC = () => {
-  const [currentPage, setCurrentPage] = useState<Page>('login');
+const App = () => {
+  const [currentPage, setCurrentPage] = useState('login');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [userRole, setUserRole] = useState<string>('viewer');
-  const [userEmail, setUserEmail] = useState<string>('');
+  const [userRole, setUserRole] = useState('viewer');
+  const [userEmail, setUserEmail] = useState('');
   
   // Navigation states
-  const [selectedDbId, setSelectedDbId] = useState<string | null>(null);
-  const [selectedDbName, setSelectedDbName] = useState<string | null>(null);
+  const [selectedDbId, setSelectedDbId] = useState(null);
+  const [selectedDbName, setSelectedDbName] = useState(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   useEffect(() => {
@@ -48,7 +46,7 @@ const App: React.FC = () => {
     return () => window.removeEventListener('auth_failed', handleAuthFailure);
   }, []);
 
-  const handleLoginSuccess = useCallback((role: string, email: string) => {
+  const handleLoginSuccess = useCallback((role, email) => {
     setIsAuthenticated(true);
     setUserRole(role);
     setUserEmail(email);
@@ -65,7 +63,7 @@ const App: React.FC = () => {
     setCurrentPage('login');
   }, []);
 
-  const handleSelectDatabase = useCallback((id: string, name: string) => {
+  const handleSelectDatabase = useCallback((id, name) => {
     setSelectedDbId(id);
     setSelectedDbName(name);
     setCurrentPage('workspace');
@@ -76,12 +74,12 @@ const App: React.FC = () => {
 
   const navItems = useMemo(() => {
     const items = [
-      { id: 'dashboard' as Page, label: 'Databases', icon: <Database size={18} /> },
-      { id: 'workspace' as Page, label: 'Query Workspace', icon: <Terminal size={18} /> },
-      { id: 'history' as Page, label: 'Query History', icon: <History size={18} /> },
+      { id: 'dashboard', label: 'Databases', icon: <Database size={18} /> },
+      { id: 'workspace', label: 'Query Workspace', icon: <Terminal size={18} /> },
+      { id: 'history', label: 'Query History', icon: <History size={18} /> },
     ];
     if (userRole === 'admin') {
-      items.push({ id: 'admin' as Page, label: 'Admin Panel', icon: <Shield size={18} /> });
+      items.push({ id: 'admin', label: 'Admin Panel', icon: <Shield size={18} /> });
     }
     return items;
   }, [userRole]);

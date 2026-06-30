@@ -1,11 +1,5 @@
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { Copy, Check, Terminal, HelpCircle } from 'lucide-react';
-
-interface SQLViewerProps {
-  sql: string;
-  explanation: string;
-  confidence: number;
-}
 
 const SQL_KEYWORDS = new Set([
   'SELECT', 'FROM', 'WHERE', 'AND', 'OR', 'NOT', 'IN', 'LIKE', 'BETWEEN', 'IS', 'NULL',
@@ -17,7 +11,7 @@ const SQL_KEYWORDS = new Set([
   'FETCH', 'FIRST', 'NEXT', 'ROWS', 'ONLY', 'ILIKE',
 ]);
 
-function highlightSQL(sql: string): React.ReactNode[] {
+function highlightSQL(sql) {
   const tokens = sql.split(/(\b\w+\b|'[^']*'|"[^"]*"|`[^`]*`|--[^\n]*|\n|.)/g);
   return tokens.map((token, i) => {
     if (!token) return null;
@@ -34,7 +28,7 @@ function highlightSQL(sql: string): React.ReactNode[] {
   });
 }
 
-export const SQLViewer: React.FC<SQLViewerProps> = ({ sql, explanation, confidence }) => {
+export const SQLViewer = ({ sql, explanation, confidence }) => {
   const [copied, setCopied] = useState(false);
 
   const highlighted = useMemo(() => highlightSQL(sql), [sql]);
@@ -45,7 +39,7 @@ export const SQLViewer: React.FC<SQLViewerProps> = ({ sql, explanation, confiden
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const getConfidenceColor = (score: number) => {
+  const getConfidenceColor = (score) => {
     if (score >= 0.8) return 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20';
     if (score >= 0.5) return 'text-amber-400 bg-amber-500/10 border-amber-500/20';
     return 'text-rose-400 bg-rose-500/10 border-rose-500/20';
