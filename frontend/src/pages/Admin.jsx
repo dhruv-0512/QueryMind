@@ -1,15 +1,29 @@
 import { useState, useEffect } from 'react';
-import { Shield, Users, ScrollText, BarChart3, Clock, HelpCircle, HardDrive, RefreshCw } from 'lucide-react';
+import { Shield, Users, ScrollText, BarChart3, Clock, HelpCircle, HardDrive } from 'lucide-react';
 import { api } from '../services/api';
 
+/*
+  Why: Old Admin had:
+    - "Admin Dashboard" with Shield icon inline in gradient glow-text
+    - 4 stat "widgets" — each a rounded-2xl card with a colored icon + uppercase label
+    - A glass-card wrapping the tab + content area
+    - Tab bar with bg-slate-950 container and bg-indigo-500/20 active pill
+    - Audit logs as individual rounded-xl cards with expand animations
+
+  Fix:
+    - Clean heading, Shield icon removed from the h1 (it's already in the nav)
+    - Stats as a single horizontal status-bar strip (same pattern as QueryWorkspace)
+    - Tab bar as underline-style tabs
+    - Table and audit logs inside a surface card with no extra nesting
+*/
 export const Admin = () => {
-  const [users, setUsers] = useState([]);
+  const [users,     setUsers]     = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
-  const [stats, setStats] = useState(null);
-  
-  const [isLoading, setIsLoading] = useState(true);
-  const [errorMsg, setErrorMsg] = useState('');
-  const [activeSubTab, setActiveSubTab] = useState('users');
+  const [stats,     setStats]     = useState(null);
+
+  const [isLoading,     setIsLoading]     = useState(true);
+  const [errorMsg,      setErrorMsg]      = useState('');
+  const [activeSubTab,  setActiveSubTab]  = useState('users');
 
   useEffect(() => {
     const fetchAdminData = async () => {
@@ -19,13 +33,13 @@ export const Admin = () => {
         const [usersData, logsData, statsData] = await Promise.all([
           api.get('/admin/users'),
           api.get('/admin/audit-logs'),
-          api.get('/admin/stats')
+          api.get('/admin/stats'),
         ]);
         setUsers(usersData);
         setAuditLogs(logsData);
         setStats(statsData);
       } catch (err) {
-        setErrorMsg(err.message || 'Failed to retrieve admin control dashboard logs.');
+        setErrorMsg(err.message || 'Failed to load admin data.');
       } finally {
         setIsLoading(false);
       }
@@ -33,143 +47,226 @@ export const Admin = () => {
     fetchAdminData();
   }, []);
 
+  const roleBadge = (role) => {
+    if (role === 'admin')   return <span className="badge badge-accent">admin</span>;
+    if (role === 'analyst') return <span className="badge badge-neutral">analyst</span>;
+    return <span className="badge badge-neutral">viewer</span>;
+  };
+
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }} className="animate-fade-in">
+
+      {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold glow-text flex items-center gap-2">
-          <Shield size={28} className="text-indigo-400" />
-          Admin Dashboard
-        </h1>
-        <p className="text-slate-400 text-sm mt-1">
-          Monitor users, view system events, and track query pipeline execution metrics.
-        </p>
+        <h1 className="page-title">Admin Dashboard</h1>
+        <p className="page-subtitle">Monitor users, system events, and query pipeline metrics.</p>
       </div>
 
       {errorMsg && (
-        <div className="p-4 bg-rose-950/20 border border-rose-900/30 text-rose-400 rounded-xl text-sm">
+        <div style={{
+          padding: '10px 14px',
+          background: 'var(--color-danger-muted)',
+          border: '1px solid rgba(239,68,68,0.2)',
+          borderRadius: 6,
+          fontSize: '0.8125rem',
+          color: 'var(--color-danger)',
+        }}>
           {errorMsg}
         </div>
       )}
 
       {isLoading ? (
-        <div className="flex flex-col items-center justify-center p-20 space-y-4">
-          <RefreshCw className="w-10 h-10 text-indigo-400 animate-spin" />
-          <p className="text-slate-400 text-xs">Assembling administrative reports...</p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '40px 0', color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
+          <span style={{
+            width: 15,
+            height: 15,
+            border: '2px solid var(--border-strong)',
+            borderTopColor: 'var(--accent)',
+            borderRadius: '50%',
+            animation: 'spin 0.7s linear infinite',
+            flexShrink: 0,
+          }} />
+          Loading admin data…
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
         </div>
       ) : (
-        <div className="space-y-8">
-          {/* Stats Widgets */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+          {/*
+            Why: Old stats were 4 individual cards each with:
+              - A colored icon (indigo/purple/emerald/amber)
+              - An "UPPERCASE" font-bold label
+              - A text-2xl number
+            This is a classic AI "dashboard widget" antipattern.
+
+            Fix: Horizontal status bar — same compact pattern used in QueryWorkspace
+            for consistency. Numbers are the focus, labels are quiet.
+          */}
           {stats && (
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="p-5 bg-slate-900/30 border border-slate-800 rounded-2xl space-y-2">
-                <div className="flex justify-between items-center text-indigo-400">
-                  <span className="text-xs uppercase font-bold text-slate-500">Total Queries</span>
-                  <HelpCircle size={18} />
-                </div>
-                <p className="text-2xl font-bold text-slate-200">{stats.total_queries}</p>
+            <div className="status-bar">
+              <div className="status-item">
+                <span className="status-item-label">Total Queries</span>
+                <span className="status-item-value">{stats.total_queries.toLocaleString()}</span>
               </div>
-
-              <div className="p-5 bg-slate-900/30 border border-slate-800 rounded-2xl space-y-2">
-                <div className="flex justify-between items-center text-purple-400">
-                  <span className="text-xs uppercase font-bold text-slate-500">Cache Hits</span>
-                  <HardDrive size={18} />
-                </div>
-                <p className="text-2xl font-bold text-slate-200">{stats.cache_hits}</p>
+              <div style={{ width: 1, background: 'var(--border-subtle)', alignSelf: 'stretch' }} />
+              <div className="status-item">
+                <span className="status-item-label">Cache Hits</span>
+                <span className="status-item-value">{stats.cache_hits.toLocaleString()}</span>
               </div>
-
-              <div className="p-5 bg-slate-900/30 border border-slate-800 rounded-2xl space-y-2">
-                <div className="flex justify-between items-center text-emerald-400">
-                  <span className="text-xs uppercase font-bold text-slate-500">Cache Hit Rate</span>
-                  <BarChart3 size={18} />
-                </div>
-                <p className="text-2xl font-bold text-slate-200">{Math.round(stats.cache_hit_rate * 100)}%</p>
+              <div style={{ width: 1, background: 'var(--border-subtle)', alignSelf: 'stretch' }} />
+              <div className="status-item">
+                <span className="status-item-label">Cache Hit Rate</span>
+                <span className="status-item-value">{Math.round(stats.cache_hit_rate * 100)}%</span>
               </div>
-
-              <div className="p-5 bg-slate-900/30 border border-slate-800 rounded-2xl space-y-2">
-                <div className="flex justify-between items-center text-amber-400">
-                  <span className="text-xs uppercase font-bold text-slate-500">Avg Latency</span>
-                  <Clock size={18} />
-                </div>
-                <p className="text-2xl font-bold text-slate-200">{stats.avg_latency_seconds.toFixed(3)}s</p>
+              <div style={{ width: 1, background: 'var(--border-subtle)', alignSelf: 'stretch' }} />
+              <div className="status-item">
+                <span className="status-item-label">Avg Latency</span>
+                <span className="status-item-value">{stats.avg_latency_seconds.toFixed(3)}s</span>
               </div>
             </div>
           )}
 
-          {/* Sub Navigation */}
-          <div className="glass-card p-6 space-y-6">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div className="flex bg-slate-950 p-0.5 border border-slate-850 rounded-lg text-xs">
-                <button
-                  onClick={() => setActiveSubTab('users')}
-                  className={`flex items-center gap-1.5 px-4 py-2 rounded-md font-semibold transition ${activeSubTab === 'users' ? 'bg-indigo-500/20 text-indigo-400' : 'text-slate-500 hover:text-slate-300'}`}
-                >
-                  <Users size={14} />
-                  User Registry ({users.length})
-                </button>
-                <button
-                  onClick={() => setActiveSubTab('logs')}
-                  className={`flex items-center gap-1.5 px-4 py-2 rounded-md font-semibold transition ${activeSubTab === 'logs' ? 'bg-indigo-500/20 text-indigo-400' : 'text-slate-500 hover:text-slate-300'}`}
-                >
-                  <ScrollText size={14} />
-                  System Audit Logs ({auditLogs.length})
-                </button>
-              </div>
+          {/* Tab + Content */}
+          <div className="surface">
+            {/*
+              Why: Old tab bar used bg-slate-950 dark box with bg-indigo-500/20 pill.
+              Fix: Clean underline tabs flush to the surface border.
+            */}
+            <div style={{
+              display: 'flex',
+              gap: 0,
+              padding: '0 20px',
+              borderBottom: '1px solid var(--border-subtle)',
+            }}>
+              {[
+                { id: 'users', label: `Users (${users.length})` },
+                { id: 'logs',  label: `Audit Logs (${auditLogs.length})` },
+              ].map((tab) => {
+                const isActive = activeSubTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveSubTab(tab.id)}
+                    style={{
+                      padding: '12px 16px',
+                      fontSize: '0.8125rem',
+                      fontWeight: isActive ? 600 : 400,
+                      color: isActive ? 'var(--text-primary)' : 'var(--text-muted)',
+                      background: 'none',
+                      border: 'none',
+                      borderBottom: isActive ? '2px solid var(--accent)' : '2px solid transparent',
+                      cursor: 'pointer',
+                      transition: 'color 0.15s',
+                      marginBottom: -1,
+                    }}
+                  >
+                    {tab.label}
+                  </button>
+                );
+              })}
             </div>
 
-            {/* Sub Tab: Users */}
+            {/* Users Table */}
             {activeSubTab === 'users' ? (
-              <div className="overflow-x-auto border border-slate-800 rounded-xl bg-slate-950/80">
-                <table className="w-full text-left border-collapse text-sm">
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8125rem' }}>
                   <thead>
-                    <tr className="border-b border-slate-800 bg-slate-900/30">
-                      <th className="p-4 font-semibold text-slate-300">User ID</th>
-                      <th className="p-4 font-semibold text-slate-300">Email Address</th>
-                      <th className="p-4 font-semibold text-slate-300">Role Pill</th>
-                      <th className="p-4 font-semibold text-slate-300">Registration Date</th>
+                    <tr style={{ borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-raised)' }}>
+                      {['User ID', 'Email', 'Role', 'Registered'].map((h) => (
+                        <th
+                          key={h}
+                          style={{
+                            padding: '10px 20px',
+                            fontWeight: 600,
+                            color: 'var(--text-muted)',
+                            fontSize: '0.75rem',
+                            letterSpacing: '0.02em',
+                            textAlign: 'left',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {h}
+                        </th>
+                      ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {users.map((u) => (
-                      <tr key={u.id} className="border-b border-slate-900 hover:bg-slate-900/10">
-                        <td className="p-4 text-xs font-mono text-slate-500">{u.id}</td>
-                        <td className="p-4 text-slate-300 font-semibold">{u.email}</td>
-                        <td className="p-4">
-                          <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase ${
-                            u.role === 'admin' 
-                              ? 'text-indigo-400 bg-indigo-500/10 border border-indigo-500/20' 
-                              : u.role === 'analyst' 
-                                ? 'text-purple-400 bg-purple-500/10 border border-purple-500/20' 
-                                : 'text-slate-400 bg-slate-500/10 border border-slate-500/20'
-                          }`}>
-                            {u.role}
-                          </span>
+                    {users.map((u, idx) => (
+                      <tr
+                        key={u.id}
+                        style={{
+                          borderBottom: idx < users.length - 1 ? '1px solid var(--border-subtle)' : 'none',
+                        }}
+                      >
+                        <td style={{
+                          padding: '12px 20px',
+                          fontFamily: 'var(--font-mono)',
+                          fontSize: '0.72rem',
+                          color: 'var(--text-muted)',
+                        }}>
+                          {u.id}
                         </td>
-                        <td className="p-4 text-xs text-slate-400">{new Date(u.created_at).toLocaleDateString()}</td>
+                        <td style={{ padding: '12px 20px', fontWeight: 500, color: 'var(--text-primary)' }}>
+                          {u.email}
+                        </td>
+                        <td style={{ padding: '12px 20px' }}>
+                          {roleBadge(u.role)}
+                        </td>
+                        <td style={{ padding: '12px 20px', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                          {new Date(u.created_at).toLocaleDateString()}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
             ) : (
-              /* Sub Tab: Audit Logs */
-              <div className="space-y-3 max-h-[600px] overflow-y-auto pr-1">
-                {auditLogs.map((log) => (
-                  <div key={log.id} className="p-4 bg-slate-900/20 hover:bg-slate-900/30 border border-slate-900 hover:border-slate-850 rounded-xl space-y-2 transition-all">
-                    <div className="flex justify-between items-start gap-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-bold px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-                          {log.event_type}
-                        </span>
-                        <span className="text-xs text-slate-500">
-                          User ID: {log.user_id ? <span className="font-mono text-slate-400">{log.user_id}</span> : 'System'}
+              /*
+                Why: Old audit log entries were individual rounded-xl cards with 
+                JSON.stringify payload in a code block — each card had its own border,
+                padding, hover, and an event_type pill. Heavy repetition.
+
+                Fix: List in a surface — each log as a thin-bordered row.
+                Event type as a badge. Payload in a compact code block.
+              */
+              <div style={{ maxHeight: 520, overflowY: 'auto' }}>
+                {auditLogs.map((log, idx) => (
+                  <div
+                    key={log.id}
+                    style={{
+                      padding: '14px 20px',
+                      borderBottom: idx < auditLogs.length - 1 ? '1px solid var(--border-subtle)' : 'none',
+                    }}
+                  >
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: 12,
+                      marginBottom: 8,
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <span className="badge badge-accent">{log.event_type}</span>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                          {log.user_id
+                            ? <><code style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', fontSize: '0.72rem' }}>{log.user_id}</code></>
+                            : 'System'
+                          }
                         </span>
                       </div>
-                      <span className="text-[10px] text-slate-500 font-mono">
+                      <span style={{
+                        fontSize: '0.72rem',
+                        fontFamily: 'var(--font-mono)',
+                        color: 'var(--text-muted)',
+                        flexShrink: 0,
+                      }}>
                         {new Date(log.created_at).toLocaleString()}
                       </span>
                     </div>
-                    {/* Log Payload Details */}
-                    <pre className="p-3 bg-black/40 text-[10px] font-mono text-slate-400 rounded-lg overflow-x-auto max-h-28">
+                    <pre
+                      className="code-block"
+                      style={{ fontSize: '0.72rem', maxHeight: 100, overflowX: 'auto' }}
+                    >
                       {JSON.stringify(log.payload, null, 2)}
                     </pre>
                   </div>

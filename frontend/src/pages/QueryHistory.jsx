@@ -1,12 +1,28 @@
 import { useState, useEffect, useMemo } from 'react';
-import { HelpCircle, Calendar, ShieldCheck, Clock, Terminal, AlertTriangle, AlertOctagon, CheckCircle2, Search } from 'lucide-react';
+import { Calendar, ShieldCheck, Clock, Terminal, AlertTriangle, AlertOctagon, CheckCircle2, Search } from 'lucide-react';
 import { api } from '../services/api';
 
+/*
+  Why: Old QueryHistory had:
+    - "Query History" in glow-text gradient heading
+    - Each history entry wrapped in glass-card with backdrop-blur, border-hover
+    - Status badges as rounded-full pills with colored bg (emerald/rose/amber)
+    - "Executed Statement" label in tracking-wider uppercase
+    - Stats row icons (Calendar, Clock, ShieldCheck) added visual noise
+
+  Fix:
+    - Plain heading
+    - History entries as a clean list — thin border-top separators, no cards
+    - Status as a compact square badge (badge classes)
+    - SQL block with subtle bg, no decorative label
+    - Stats as comma-separated inline text, no icons
+*/
+
 export const QueryHistory = () => {
-  const [history, setHistory] = useState([]);
+  const [history,    setHistory]    = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [isLoading, setIsLoading] = useState(true);
-  const [errorMsg, setErrorMsg] = useState('');
+  const [isLoading,  setIsLoading]  = useState(true);
+  const [errorMsg,   setErrorMsg]   = useState('');
 
   useEffect(() => {
     const fetchHistory = async () => {
@@ -32,125 +48,169 @@ export const QueryHistory = () => {
     [history, searchTerm]
   );
 
-  const getStatusBadge = (status) => {
-    switch (status) {
-      case 'success':
-        return (
-          <span className="flex items-center gap-1 text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full text-xs font-semibold">
-            <CheckCircle2 size={12} />
-            Success
-          </span>
-        );
-      case 'rejected':
-        return (
-          <span className="flex items-center gap-1 text-rose-400 bg-rose-500/10 border border-rose-500/20 px-2.5 py-0.5 rounded-full text-xs font-semibold">
-            <AlertOctagon size={12} />
-            Rejected
-          </span>
-        );
-      case 'failed':
-        return (
-          <span className="flex items-center gap-1 text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2.5 py-0.5 rounded-full text-xs font-semibold">
-            <AlertTriangle size={12} />
-            Failed
-          </span>
-        );
-    }
+  const StatusBadge = ({ status }) => {
+    if (status === 'success')  return <span className="badge badge-success"><CheckCircle2 size={10} />Success</span>;
+    if (status === 'rejected') return <span className="badge badge-danger"><AlertOctagon size={10} />Rejected</span>;
+    if (status === 'failed')   return <span className="badge badge-warning"><AlertTriangle size={10} />Failed</span>;
+    return null;
   };
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }} className="animate-fade-in">
+
+      {/* Header row */}
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 12,
+      }} className="md:flex-row md:items-start md:justify-between">
         <div>
-          <h1 className="text-3xl font-bold glow-text">Query History</h1>
-          <p className="text-slate-400 text-sm mt-1">
-            Review your past natural language queries and execution logs.
-          </p>
+          <h1 className="page-title">Query History</h1>
+          <p className="page-subtitle">Past natural language queries and execution logs.</p>
         </div>
 
-        {/* Search filter */}
-        <div className="relative w-full md:w-80">
-          <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
+        {/* Search */}
+        <div style={{ position: 'relative', flexShrink: 0 }}>
+          <Search
+            size={13}
+            style={{
+              position: 'absolute',
+              left: 10,
+              top: '50%',
+              transform: 'translateY(-50%)',
+              color: 'var(--text-muted)',
+              pointerEvents: 'none',
+            }}
+          />
           <input
             type="text"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search question or SQL..."
-            className="input-field pl-11 text-xs py-2"
+            placeholder="Search questions or SQL…"
+            className="input-field"
+            style={{ paddingLeft: 30, width: 260 }}
           />
         </div>
       </div>
 
       {errorMsg && (
-        <div className="p-4 bg-rose-950/20 border border-rose-900/30 text-rose-400 rounded-xl text-sm">
+        <div style={{
+          padding: '10px 14px',
+          background: 'var(--color-danger-muted)',
+          border: '1px solid rgba(239,68,68,0.2)',
+          borderRadius: 6,
+          fontSize: '0.8125rem',
+          color: 'var(--color-danger)',
+        }}>
           {errorMsg}
         </div>
       )}
 
       {isLoading ? (
-        <div className="flex flex-col items-center justify-center p-20 space-y-4">
-          <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
-          <p className="text-slate-400 text-xs">Retrieving execution audit trace...</p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '40px 0', color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
+          <span style={{
+            width: 15,
+            height: 15,
+            border: '2px solid var(--border-strong)',
+            borderTopColor: 'var(--accent)',
+            borderRadius: '50%',
+            animation: 'spin 0.7s linear infinite',
+            flexShrink: 0,
+          }} />
+          Loading history…
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
         </div>
       ) : filteredHistory.length === 0 ? (
-        <div className="text-center py-20 border border-dashed border-slate-800 rounded-2xl bg-slate-950/10">
-          <HelpCircle className="mx-auto text-slate-600 mb-3" size={32} />
-          <p className="text-sm font-semibold text-slate-400">No query history records found</p>
-          <p className="text-xs text-slate-500 mt-1">
-            {searchTerm ? 'No matches found for your filter criteria.' : 'Create natural language queries to populate history logs.'}
+        <div style={{ padding: '48px 0', textAlign: 'center' }}>
+          <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>
+            {searchTerm ? 'No matches for your search.' : 'No queries recorded yet.'}
           </p>
+          {!searchTerm && (
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-disabled)', marginTop: 4 }}>
+              Run a query in the workspace to see it here.
+            </p>
+          )}
         </div>
       ) : (
-        <div className="space-y-4">
-          {filteredHistory.map((item) => (
-            <div key={item.id} className="glass-card p-6 space-y-4 hover:border-indigo-500/20 transition-all duration-200">
-              <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-900 pb-3">
-                <h3 className="font-semibold text-slate-200 text-sm max-w-2xl leading-relaxed">
+        /*
+          Why: Old layout rendered each history entry as a glass-card with 24px padding,
+          border-hover on indigo, and multiple distinct sections inside each card 
+          (separator, SQL block, error box, stats row with icons). The repeated card
+          pattern made the entire history list look like a "list of AI components."
+
+          Fix: Clean list — each entry is a plain row separated by a thin border.
+          The question is the primary text. SQL is shown in a compact code block.
+          Status badge is small, metadata is one quiet line below.
+        */
+        <div className="surface" style={{ overflow: 'hidden' }}>
+          {filteredHistory.map((item, idx) => (
+            <div
+              key={item.id}
+              style={{
+                padding: '16px 20px',
+                borderBottom: idx < filteredHistory.length - 1 ? '1px solid var(--border-subtle)' : 'none',
+              }}
+            >
+              {/* Question + status */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                justifyContent: 'space-between',
+                gap: 12,
+                marginBottom: 10,
+              }}>
+                <p style={{
+                  fontSize: '0.875rem',
+                  fontWeight: 500,
+                  color: 'var(--text-primary)',
+                  lineHeight: 1.5,
+                  maxWidth: '75%',
+                }}>
                   {item.question}
-                </h3>
-                <div className="flex items-center gap-2">
-                  {getStatusBadge(item.status)}
-                </div>
+                </p>
+                <StatusBadge status={item.status} />
               </div>
 
-              {/* SQL Code Block */}
+              {/* SQL block */}
               {item.sql && (
-                <div className="space-y-1.5">
-                  <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider flex items-center gap-1.5">
-                    <Terminal size={12} />
-                    Executed Statement
-                  </span>
-                  <pre className="code-block p-3 text-xs whitespace-pre-wrap break-all bg-black/40 border border-slate-900 rounded-lg max-h-40 overflow-y-auto">
-                    <code className="text-indigo-300/95 font-mono">{item.sql}</code>
-                  </pre>
-                </div>
+                <pre
+                  className="code-block"
+                  style={{ marginBottom: 10, maxHeight: 120, overflowY: 'auto', fontSize: '0.75rem' }}
+                >
+                  <code style={{ color: '#a5b4fc' }}>{item.sql}</code>
+                </pre>
               )}
 
-              {/* Error Box */}
+              {/* Error */}
               {item.error_message && (
-                <div className="p-3.5 bg-rose-950/20 border border-rose-900/30 text-rose-400 text-xs rounded-xl font-mono leading-relaxed">
-                  <span className="font-bold block uppercase tracking-wider text-[10px] text-rose-400 mb-1">Execution Error Details</span>
+                <div style={{
+                  padding: '8px 12px',
+                  marginBottom: 10,
+                  background: 'var(--color-danger-muted)',
+                  border: '1px solid rgba(239,68,68,0.18)',
+                  borderRadius: 5,
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: '0.75rem',
+                  color: 'var(--color-danger)',
+                  lineHeight: 1.5,
+                }}>
                   {item.error_message}
                 </div>
               )}
 
-              {/* Stats row */}
-              <div className="flex flex-wrap gap-x-6 gap-y-2 text-xs text-slate-500 pt-1">
-                <div className="flex items-center gap-1">
-                  <Calendar size={13} />
-                  <span>{new Date(item.created_at).toLocaleString()}</span>
-                </div>
-                
+              {/* Meta row */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 16,
+                fontSize: '0.75rem',
+                color: 'var(--text-muted)',
+              }}>
+                <span>{new Date(item.created_at).toLocaleString()}</span>
                 {item.status === 'success' && (
                   <>
-                    <div className="flex items-center gap-1">
-                      <Clock size={13} />
-                      <span>Latency: {item.execution_time.toFixed(3)}s</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <ShieldCheck size={13} />
-                      <span>Confidence: {Math.round(item.confidence * 100)}%</span>
-                    </div>
+                    <span>{item.execution_time.toFixed(3)}s</span>
+                    <span>{Math.round(item.confidence * 100)}% confidence</span>
                   </>
                 )}
               </div>

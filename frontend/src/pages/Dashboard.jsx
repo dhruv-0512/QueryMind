@@ -3,10 +3,25 @@ import { Database, Trash2, Calendar, DatabaseZap, ShieldAlert, Loader2, ArrowRig
 import { api } from '../services/api';
 import { DatabaseUpload } from '../components/DatabaseUpload';
 
+/*
+  Why: Old Dashboard had:
+    - "Database Registry" as glow-text gradient heading
+    - glass-card containers on every section (glassmorphism)
+    - Section headers with colored icons (indigo) reading like flashy widgets
+    - DB cards as identical rounded-2xl tiles with border-hover effects
+    - "Enter Query Workspace" as a full-width indigo ghost button inside each card
+
+  Fix:
+    - Clean page header with plain text, no gradient
+    - Left panel ("Register") as a simple surface-raised block, no decorative header icon
+    - DB list renders as a clean table-style list with left metadata and a right action
+    - Action button is compact (icon only + label), right-aligned, not full-width
+    - Hover on each row: subtle bg lift only
+*/
 export const Dashboard = ({ userRole, onSelectDatabase }) => {
   const [databases, setDatabases] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [errorMsg, setErrorMsg] = useState('');
+  const [errorMsg, setErrorMsg]   = useState('');
 
   const fetchDatabases = useCallback(async () => {
     setIsLoading(true);
@@ -21,15 +36,10 @@ export const Dashboard = ({ userRole, onSelectDatabase }) => {
     }
   }, []);
 
-  useEffect(() => {
-    fetchDatabases();
-  }, [fetchDatabases]);
+  useEffect(() => { fetchDatabases(); }, [fetchDatabases]);
 
   const handleDelete = async (id, name) => {
-    if (!window.confirm(`Are you sure you want to delete the database "${name}" and all of its schema vector indexes?`)) {
-      return;
-    }
-
+    if (!window.confirm(`Delete "${name}" and all associated vector indexes?`)) return;
     try {
       await api.delete(`/database/${id}`);
       setDatabases((prev) => prev.filter((db) => db.id !== id));
@@ -41,114 +51,201 @@ export const Dashboard = ({ userRole, onSelectDatabase }) => {
   const isUploader = userRole === 'admin' || userRole === 'analyst';
 
   return (
-    <div className="space-y-8 animate-fade-in">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold glow-text">Database Registry</h1>
-          <p className="text-slate-400 text-sm mt-1">
-            Manage your SQLite database files and vector search indexes.
-          </p>
-        </div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }} className="animate-fade-in">
+
+      {/* Page Header */}
+      <div>
+        <h1 className="page-title">Database Registry</h1>
+        <p className="page-subtitle">Manage data sources and vector search indexes.</p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Upload Panel */}
-        <div className="lg:col-span-1 space-y-6">
-          <div className="glass-card p-6 space-y-4">
-            <h2 className="text-lg font-bold text-indigo-300 flex items-center gap-2">
-              <DatabaseZap size={18} />
-              Register Database
-            </h2>
-            <p className="text-xs text-slate-400 leading-relaxed">
-              Upload a CSV, XLSX, or JSON data file. We'll auto-detect column types, create a temporary PostgreSQL schema, and index the table for natural language queries.
-            </p>
+      <div
+        style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 24 }}
+        className="lg:grid-cols-3-1"
+      >
+        <div style={{ display: 'grid', gap: 24 }} className="lg:grid lg:grid-cols-[280px_1fr] items-start">
+
+          {/* ── Left: Upload Panel ── */}
+          <div className="surface" style={{ padding: '20px 22px' }}>
+            <div style={{ marginBottom: 14 }}>
+              <p style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>
+                Register database
+              </p>
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+                Upload a CSV, XLSX, or JSON file. We'll infer types, load into PostgreSQL, and index for natural language queries.
+              </p>
+            </div>
 
             {isUploader ? (
               <DatabaseUpload onUploadSuccess={fetchDatabases} />
             ) : (
-              <div className="flex gap-2.5 p-4 bg-amber-950/20 border border-amber-900/30 text-amber-400 text-xs rounded-xl">
-                <ShieldAlert size={16} className="shrink-0 mt-0.5" />
-                <p>Only users with the **analyst** or **admin** roles can register and upload database schemas.</p>
+              <div
+                style={{
+                  display: 'flex',
+                  gap: 10,
+                  padding: '10px 12px',
+                  background: 'var(--color-warning-muted)',
+                  border: '1px solid rgba(245,158,11,0.2)',
+                  borderRadius: 6,
+                  fontSize: '0.8rem',
+                  color: 'var(--color-warning)',
+                  lineHeight: 1.5,
+                }}
+              >
+                <ShieldAlert size={15} style={{ flexShrink: 0, marginTop: 2 }} />
+                <p>Only <strong>analyst</strong> or <strong>admin</strong> roles can upload databases.</p>
               </div>
             )}
           </div>
-        </div>
 
-        {/* Database List */}
-        <div className="lg:col-span-2 space-y-6">
-          <div className="glass-card p-6 space-y-6">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold text-indigo-300 flex items-center gap-2">
-                <Database size={18} />
-                Your Databases
-              </h2>
-              <span className="text-xs bg-indigo-500/10 text-indigo-400 px-2.5 py-1 rounded-full font-semibold">
-                Count: {databases.length}
+          {/* ── Right: Database List ── */}
+          <div className="surface" style={{ padding: '20px 22px' }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: 16,
+            }}>
+              <p style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                Your databases
+              </p>
+              <span className="badge badge-neutral">
+                {databases.length} {databases.length === 1 ? 'source' : 'sources'}
               </span>
             </div>
 
             {errorMsg && (
-              <p className="text-sm text-rose-400 bg-rose-950/20 border border-rose-900/30 p-4 rounded-xl">
+              <div
+                style={{
+                  padding: '10px 12px',
+                  marginBottom: 12,
+                  background: 'var(--color-danger-muted)',
+                  border: '1px solid rgba(239,68,68,0.2)',
+                  borderRadius: 6,
+                  fontSize: '0.8125rem',
+                  color: 'var(--color-danger)',
+                }}
+              >
                 {errorMsg}
-              </p>
+              </div>
             )}
 
             {isLoading ? (
-              <div className="flex items-center justify-center p-12">
-                <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 0' }}>
+                <Loader2 size={22} style={{ color: 'var(--accent)', animation: 'spin 0.8s linear infinite' }} />
+                <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
               </div>
             ) : databases.length === 0 ? (
-              <div className="text-center py-16 border border-dashed border-slate-800 rounded-2xl bg-slate-950/10">
-                <Database className="mx-auto text-slate-600 mb-3" size={32} />
-                <p className="text-sm font-semibold text-slate-400">No databases registered yet</p>
-                <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
-                  {isUploader 
-                    ? 'Upload your first SQLite file to begin running natural language SQL queries.' 
-                    : 'Contact your administrator to have database files indexed.'}
+              /*
+                Why: Old empty state used a large dashed border box with huge padding.
+                Fix: Compact inline empty state — just a muted message. No theatrics.
+              */
+              <div
+                style={{
+                  padding: '32px 0',
+                  textAlign: 'center',
+                  borderTop: '1px solid var(--border-subtle)',
+                }}
+              >
+                <Database size={24} style={{ color: 'var(--text-disabled)', margin: '0 auto 8px' }} />
+                <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', marginBottom: 4 }}>
+                  No databases registered yet
+                </p>
+                <p style={{ fontSize: '0.75rem', color: 'var(--text-disabled)' }}>
+                  {isUploader
+                    ? 'Upload a data file to get started.'
+                    : 'Ask your administrator to register a database.'}
                 </p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {databases.map((db) => (
-                  <div 
-                    key={db.id} 
-                    className="p-5 bg-slate-900/30 hover:bg-slate-900/50 border border-slate-800 hover:border-slate-700/80 rounded-2xl flex flex-col justify-between space-y-4 group transition-all duration-200"
+              /*
+                Why: Old layout used a 2-col grid of identical rounded cards — every
+                card the same visual weight, the same border, the same hover glow.
+                This creates visual monotony that screams "template."
+
+                Fix: A vertical list where each row has:
+                  - DB name (primary, left)
+                  - Metadata inline below (format badge, row count, date)
+                  - "Open" action compact on the right
+                  - Delete icon revealed on row hover (already had this — keep it)
+
+                This reads like a real product's data table, not a portfolio card grid.
+              */
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                {databases.map((db, idx) => (
+                  <div
+                    key={db.id}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: 12,
+                      padding: '12px 0',
+                      borderTop: idx === 0 ? '1px solid var(--border-subtle)' : '1px solid var(--border-subtle)',
+                      transition: 'background 0.12s',
+                    }}
+                    className="group"
                   >
-                    <div className="space-y-2">
-                      <div className="flex items-start justify-between gap-2">
-                        <h3 className="font-semibold text-slate-200 truncate" title={db.name}>
-                          {db.name}
-                        </h3>
-                        <button
-                          onClick={() => handleDelete(db.id, db.name)}
-                          className="text-slate-500 hover:text-rose-400 p-1 hover:bg-slate-800 rounded transition opacity-0 group-hover:opacity-100"
-                          title="Delete database"
-                        >
-                          <Trash2 size={15} />
-                        </button>
-                      </div>
-                      
-                      <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                        <FileType size={13} />
-                        <span className="uppercase font-semibold text-indigo-400">{db.file_format}</span>
-                      </div>
-                      <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                        <Layers size={13} />
-                        <span>{db.row_count.toLocaleString()} rows</span>
-                      </div>
-                      <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                        <Calendar size={13} />
-                        <span>Uploaded: {new Date(db.created_at).toLocaleDateString()}</span>
+                    {/* Left: info */}
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <p style={{
+                        fontSize: '0.875rem',
+                        fontWeight: 500,
+                        color: 'var(--text-primary)',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        marginBottom: 4,
+                      }} title={db.name}>
+                        {db.name}
+                      </p>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                        <span className="badge badge-accent">
+                          {db.file_format.toUpperCase()}
+                        </span>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                          <Layers size={11} />
+                          {db.row_count.toLocaleString()} rows
+                        </span>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                          <Calendar size={11} />
+                          {new Date(db.created_at).toLocaleDateString()}
+                        </span>
                       </div>
                     </div>
 
-                    <button
-                      onClick={() => onSelectDatabase(db.id, db.name)}
-                      className="w-full flex items-center justify-center gap-1.5 py-2.5 bg-indigo-600/10 hover:bg-indigo-600 text-indigo-400 hover:text-white border border-indigo-500/20 hover:border-indigo-600 text-xs font-semibold rounded-xl transition"
-                    >
-                      Enter Query Workspace
-                      <ArrowRight size={13} />
-                    </button>
+                    {/* Right: actions */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                      <button
+                        onClick={() => handleDelete(db.id, db.name)}
+                        title="Delete database"
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          cursor: 'pointer',
+                          color: 'var(--text-disabled)',
+                          padding: 4,
+                          borderRadius: 4,
+                          lineHeight: 0,
+                          transition: 'color 0.15s',
+                          opacity: 0,
+                        }}
+                        className="group-hover:opacity-100"
+                        onMouseEnter={e => e.currentTarget.style.color = 'var(--color-danger)'}
+                        onMouseLeave={e => e.currentTarget.style.color = 'var(--text-disabled)'}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+
+                      <button
+                        onClick={() => onSelectDatabase(db.id, db.name)}
+                        className="btn-secondary"
+                        style={{ height: 30, padding: '0 10px', fontSize: '0.75rem', gap: 5 }}
+                      >
+                        Open
+                        <ArrowRight size={12} />
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>

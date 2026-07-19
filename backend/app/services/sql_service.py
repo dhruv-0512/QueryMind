@@ -28,8 +28,8 @@ class SqlService:
     def __init__(self) -> None:
         if is_api_key_configured():
             genai.configure(api_key=settings.GEMINI_API_KEY)
-            self.model = genai.GenerativeModel("gemini-2.5-flash")
-            logger.info("Gemini Model gemini-2.5-flash initialized for SQL Service.")
+            self.model = genai.GenerativeModel("gemini-3.5-flash")
+            logger.info("Gemini Model gemini-3.5-flash initialized for SQL Service.")
         else:
             logger.warning("GEMINI_API_KEY is not configured. SQL service will use mock generation.")
             self.model = None

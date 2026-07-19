@@ -1,5 +1,19 @@
 import { useState, useMemo } from 'react';
-import { Copy, Check, Terminal, HelpCircle } from 'lucide-react';
+import { Copy, Check } from 'lucide-react';
+
+/*
+  Why: Old SQLViewer had:
+    - "GENERATED QUERY" in uppercase tracking-wider indigo text + Terminal icon
+    - Confidence as a rounded-full pill (e.g. emerald/amber/rose colored)
+    - The explanation in a large bg-indigo-950/20 bordered box with HelpCircle icon
+    - Copy button as a styled pill with border
+
+  Fix:
+    - Section label as a simple small-caps muted text
+    - Confidence as a compact badge
+    - Explanation as a plain muted paragraph below the code block
+    - Copy button as a minimal text button, top-right of the code block
+*/
 
 const SQL_KEYWORDS = new Set([
   'SELECT', 'FROM', 'WHERE', 'AND', 'OR', 'NOT', 'IN', 'LIKE', 'BETWEEN', 'IS', 'NULL',
@@ -15,13 +29,11 @@ function highlightSQL(sql) {
   const tokens = sql.split(/(\b\w+\b|'[^']*'|"[^"]*"|`[^`]*`|--[^\n]*|\n|.)/g);
   return tokens.map((token, i) => {
     if (!token) return null;
-    if (/^--/.test(token)) return <span key={i} className="text-slate-600 italic">{token}</span>;
-    if (/^'[^']*'$/.test(token) || /^"[^"]*"$/.test(token)) {
-      return <span key={i} className="text-amber-300">{token}</span>;
-    }
-    if (/^\d+\.?\d*$/.test(token)) return <span key={i} className="text-purple-300">{token}</span>;
+    if (/^--/.test(token))                        return <span key={i} style={{ color: '#52525b', fontStyle: 'italic' }}>{token}</span>;
+    if (/^'[^']*'$/.test(token) || /^"[^"]*"$/.test(token)) return <span key={i} style={{ color: '#d4a574' }}>{token}</span>;
+    if (/^\d+\.?\d*$/.test(token))                return <span key={i} style={{ color: '#a78bfa' }}>{token}</span>;
     if (SQL_KEYWORDS.has(token.toUpperCase()) && /^[A-Za-z]+$/.test(token)) {
-      return <span key={i} className="text-indigo-400 font-semibold">{token.toUpperCase()}</span>;
+      return <span key={i} style={{ color: '#818cf8', fontWeight: 500 }}>{token.toUpperCase()}</span>;
     }
     if (token === '\n') return <br key={i} />;
     return <span key={i}>{token}</span>;
@@ -39,57 +51,67 @@ export const SQLViewer = ({ sql, explanation, confidence }) => {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const getConfidenceColor = (score) => {
-    if (score >= 0.8) return 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20';
-    if (score >= 0.5) return 'text-amber-400 bg-amber-500/10 border-amber-500/20';
-    return 'text-rose-400 bg-rose-500/10 border-rose-500/20';
-  };
+  const confidenceClass =
+    confidence >= 0.8 ? 'badge-success' :
+    confidence >= 0.5 ? 'badge-warning' :
+    'badge-danger';
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div className="flex items-center gap-2 text-indigo-400">
-          <Terminal size={18} />
-          <h3 className="text-sm font-semibold uppercase tracking-wider">Generated Query</h3>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+
+      {/* Header row */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: 8,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span className="section-label">Generated SQL</span>
+          <span className={`badge ${confidenceClass}`}>
+            {Math.round(confidence * 100)}% confidence
+          </span>
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-semibold ${getConfidenceColor(confidence)}`}>
-            Confidence: {Math.round(confidence * 100)}%
-          </div>
-
-          <button
-            onClick={handleCopy}
-            className="flex items-center gap-1.5 px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-lg border border-slate-700 transition"
-          >
-            {copied ? (
-              <>
-                <Check size={14} className="text-emerald-400" />
-                Copied
-              </>
-            ) : (
-              <>
-                <Copy size={14} />
-                Copy SQL
-              </>
-            )}
-          </button>
-        </div>
+        <button
+          onClick={handleCopy}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 5,
+            fontSize: '0.75rem',
+            color: copied ? 'var(--color-success)' : 'var(--text-muted)',
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            padding: '2px 0',
+            transition: 'color 0.15s',
+          }}
+        >
+          {copied ? <Check size={13} /> : <Copy size={13} />}
+          {copied ? 'Copied' : 'Copy'}
+        </button>
       </div>
 
-      <pre className="code-block whitespace-pre-wrap break-words relative">
+      {/* Code block */}
+      <pre className="code-block" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
         <code>{highlighted}</code>
       </pre>
 
-      <div className="flex gap-3 p-4 bg-indigo-950/20 border border-indigo-900/30 rounded-xl">
-        <div className="text-indigo-400 mt-0.5">
-          <HelpCircle size={18} />
-        </div>
-        <div className="space-y-1 min-w-0">
-          <h4 className="text-xs font-semibold uppercase tracking-wider text-indigo-400">Model Explanation</h4>
-          <p className="text-xs text-slate-300 leading-relaxed break-words">{explanation}</p>
-        </div>
-      </div>
+      {/* Explanation */}
+      {explanation && (
+        <p style={{
+          fontSize: '0.8rem',
+          color: 'var(--text-muted)',
+          lineHeight: 1.6,
+          paddingTop: 4,
+          borderTop: '1px solid var(--border-subtle)',
+        }}>
+          <span style={{ fontWeight: 600, color: 'var(--text-secondary)', marginRight: 4 }}>Explanation</span>
+          {explanation}
+        </p>
+      )}
     </div>
   );
 };

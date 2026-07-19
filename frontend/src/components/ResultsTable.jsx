@@ -1,16 +1,25 @@
 import { useState, useMemo } from 'react';
 import { ChevronLeft, ChevronRight, Copy, Check } from 'lucide-react';
 
+/*
+  Why: Old ResultsTable had:
+    - Row count as bg-indigo-500/10 rounded-full badge — decorative, not informative
+    - Table container as "border border-slate-800 rounded-xl bg-slate-950/80"
+    - Pagination buttons as rounded squares (w-8 h-8 rounded) with indigo active state
+    - Cell copy buttons always present but opacity-0 — good pattern, keeping it
+
+  Fix:
+    - Row count as plain muted text (already done at results panel level, so just remove badge)
+    - Table in the parent's surface card already — no extra border wrapper needed
+    - Pagination: simple prev/next with page indicator, no number grid
+*/
+
 function formatColumnHeader(col) {
-  return col
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, (c) => c.toUpperCase());
+  return col.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 function isNumeric(val) {
-  if (typeof val === 'number') return true;
-  if (typeof val === 'bigint') return true;
-  return false;
+  return typeof val === 'number' || typeof val === 'bigint';
 }
 
 function isDateLike(val) {
@@ -50,14 +59,14 @@ function getColumnAlignment(columns, data) {
 }
 
 export const ResultsTable = ({ data, isLoading }) => {
-  const [currentPage, setCurrentPage] = useState(1);
+  const [currentPage,  setCurrentPage]  = useState(1);
   const [rowsPerPage] = useState(25);
-  const [copiedCell, setCopiedCell] = useState(null);
+  const [copiedCell,   setCopiedCell]   = useState(null);
 
-  const columns = useMemo(() => (data && data.length > 0 ? Object.keys(data[0]) : []), [data]);
+  const columns     = useMemo(() => (data?.length > 0 ? Object.keys(data[0]) : []), [data]);
   const colAlignments = useMemo(() => (data && columns.length > 0 ? getColumnAlignment(columns, data) : {}), [data, columns]);
 
-  const totalPages = Math.ceil((data ? data.length : 0) / rowsPerPage);
+  const totalPages  = Math.ceil((data?.length ?? 0) / rowsPerPage);
   const currentRows = useMemo(() => {
     if (!data) return [];
     const start = (currentPage - 1) * rowsPerPage;
@@ -66,18 +75,27 @@ export const ResultsTable = ({ data, isLoading }) => {
 
   if (isLoading) {
     return (
-      <div className="flex flex-col items-center justify-center p-12 space-y-4">
-        <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
-        <p className="text-slate-400 text-sm">Executing query and retrieving results...</p>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '32px 0', color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
+        <span style={{
+          width: 14,
+          height: 14,
+          border: '2px solid var(--border-strong)',
+          borderTopColor: 'var(--accent)',
+          borderRadius: '50%',
+          animation: 'spin 0.7s linear infinite',
+          flexShrink: 0,
+        }} />
+        Executing query…
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       </div>
     );
   }
 
   if (!data || data.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center p-12 text-center border border-dashed border-slate-800 rounded-xl bg-slate-900/30">
-        <p className="text-slate-400 text-sm font-medium">No results returned</p>
-        <p className="text-slate-500 text-xs mt-1">Execute a valid SQL query to view data.</p>
+      <div style={{ padding: '32px 0', textAlign: 'center' }}>
+        <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>No results returned</p>
+        <p style={{ fontSize: '0.8rem', color: 'var(--text-disabled)', marginTop: 4 }}>The query executed successfully but returned 0 rows.</p>
       </div>
     );
   }
@@ -89,48 +107,66 @@ export const ResultsTable = ({ data, isLoading }) => {
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold text-indigo-400 bg-indigo-500/10 px-3 py-1 rounded-full">
-          {data.length.toLocaleString()} row{data.length !== 1 ? 's' : ''}
-        </span>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
 
-        {totalPages > 1 && (
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-              disabled={currentPage === 1}
-              className="p-1.5 rounded bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:hover:bg-slate-800 transition"
-            >
-              <ChevronLeft size={16} />
-            </button>
-            <span className="text-xs text-slate-400 font-mono">
-              {currentPage} / {totalPages}
-            </span>
-            <button
-              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-              disabled={currentPage === totalPages}
-              className="p-1.5 rounded bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:hover:bg-slate-800 transition"
-            >
-              <ChevronRight size={16} />
-            </button>
-          </div>
-        )}
-      </div>
+      {/* Pagination controls — top */}
+      {totalPages > 1 && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'flex-end',
+          gap: 8,
+        }}>
+          <button
+            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+            disabled={currentPage === 1}
+            className="btn-secondary"
+            style={{ height: 28, padding: '0 8px', gap: 4 }}
+          >
+            <ChevronLeft size={14} />
+          </button>
+          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontVariantNumeric: 'tabular-nums' }}>
+            Page {currentPage} of {totalPages}
+          </span>
+          <button
+            onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+            disabled={currentPage === totalPages}
+            className="btn-secondary"
+            style={{ height: 28, padding: '0 8px', gap: 4 }}
+          >
+            <ChevronRight size={14} />
+          </button>
+        </div>
+      )}
 
-      <div className="overflow-x-auto border border-slate-800 rounded-xl bg-slate-950/80">
-        <table className="w-full border-collapse text-sm table-auto">
+      {/* Table */}
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
           <thead>
-            <tr className="border-b border-slate-700 bg-slate-900/70">
-              <th className="p-3 text-center font-semibold text-slate-500 text-xs w-10 select-none border-r border-slate-800">
+            <tr style={{ borderBottom: '1px solid var(--border-default)', background: 'var(--bg-raised)' }}>
+              <th style={{
+                padding: '8px 10px',
+                textAlign: 'center',
+                fontWeight: 500,
+                fontSize: '0.72rem',
+                color: 'var(--text-disabled)',
+                width: 36,
+                borderRight: '1px solid var(--border-subtle)',
+              }}>
                 #
               </th>
               {columns.map((col) => (
                 <th
                   key={col}
-                  className={`p-3 font-semibold text-slate-300 text-xs select-none whitespace-nowrap ${
-                    colAlignments[col] === 'right' ? 'text-right' : 'text-left'
-                  }`}
+                  style={{
+                    padding: '8px 12px',
+                    fontWeight: 600,
+                    color: 'var(--text-muted)',
+                    fontSize: '0.72rem',
+                    letterSpacing: '0.02em',
+                    whiteSpace: 'nowrap',
+                    textAlign: colAlignments[col] === 'right' ? 'right' : 'left',
+                  }}
                 >
                   {formatColumnHeader(col)}
                 </th>
@@ -143,48 +179,71 @@ export const ResultsTable = ({ data, isLoading }) => {
               return (
                 <tr
                   key={globalIdx}
-                  className={`border-b border-slate-900/80 transition-colors ${
-                    rIdx % 2 === 0 ? 'bg-transparent' : 'bg-slate-900/15'
-                  } hover:bg-slate-800/30`}
+                  style={{
+                    borderBottom: '1px solid var(--border-subtle)',
+                    background: rIdx % 2 === 0 ? 'transparent' : 'var(--bg-raised)',
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'rgba(99,102,241,0.04)'}
+                  onMouseLeave={e => e.currentTarget.style.background = rIdx % 2 === 0 ? 'transparent' : 'var(--bg-raised)'}
                 >
-                  <td className="p-3 text-center text-slate-600 font-mono text-xs border-r border-slate-800/60 select-none">
+                  <td style={{
+                    padding: '7px 10px',
+                    textAlign: 'center',
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: '0.7rem',
+                    color: 'var(--text-disabled)',
+                    borderRight: '1px solid var(--border-subtle)',
+                    userSelect: 'none',
+                  }}>
                     {globalIdx}
                   </td>
                   {columns.map((col) => {
-                    const val = row[col];
+                    const val    = row[col];
                     const cellId = `${globalIdx}-${col}`;
                     const isCopied = copiedCell === cellId;
                     const isNull = val === null || val === undefined;
-                    const align = colAlignments[col];
+                    const align  = colAlignments[col];
 
                     return (
                       <td
                         key={col}
-                        className={`p-3 font-mono text-xs relative group ${
-                          align === 'right'
-                            ? 'text-right text-slate-300'
-                            : 'text-left text-slate-400'
-                        }`}
+                        style={{
+                          padding: '7px 12px',
+                          fontFamily: 'var(--font-mono)',
+                          fontSize: '0.78rem',
+                          textAlign: align === 'right' ? 'right' : 'left',
+                          color: align === 'right' ? 'var(--text-primary)' : 'var(--text-secondary)',
+                          position: 'relative',
+                        }}
                       >
-                        <div className="flex items-start gap-1.5">
-                          <span className="break-words min-w-0 flex-1">
-                            {isNull ? (
-                              <span className="text-slate-600 italic select-none">NULL</span>
-                            ) : (
-                              formatCellValue(val)
-                            )}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: align === 'right' ? 'flex-end' : 'flex-start' }}>
+                          <span style={{ wordBreak: 'break-word', minWidth: 0, flex: 1 }}>
+                            {isNull
+                              ? <span style={{ color: 'var(--text-disabled)', fontStyle: 'italic', userSelect: 'none' }}>NULL</span>
+                              : formatCellValue(val)
+                            }
                           </span>
                           {!isNull && (
                             <button
                               onClick={() => handleCopy(val, cellId)}
-                              className="shrink-0 mt-px opacity-0 group-hover:opacity-100 p-0.5 bg-slate-800 hover:bg-slate-700 text-slate-400 rounded transition"
-                              title="Copy"
+                              title="Copy value"
+                              className="group-hover:opacity-100"
+                              style={{
+                                flexShrink: 0,
+                                opacity: 0,
+                                background: 'var(--bg-overlay)',
+                                border: '1px solid var(--border-subtle)',
+                                borderRadius: 3,
+                                padding: 2,
+                                cursor: 'pointer',
+                                color: isCopied ? 'var(--color-success)' : 'var(--text-muted)',
+                                lineHeight: 0,
+                                transition: 'opacity 0.1s, color 0.15s',
+                              }}
+                              onMouseEnter={e => e.currentTarget.style.opacity = 1}
+                              onMouseLeave={e => e.currentTarget.style.opacity = 0}
                             >
-                              {isCopied ? (
-                                <Check size={12} className="text-emerald-400" />
-                              ) : (
-                                <Copy size={12} />
-                              )}
+                              {isCopied ? <Check size={11} /> : <Copy size={11} />}
                             </button>
                           )}
                         </div>
@@ -198,45 +257,34 @@ export const ResultsTable = ({ data, isLoading }) => {
         </table>
       </div>
 
+      {/* Bottom pagination */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-1">
-          {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
-            let pageNum;
-            if (totalPages <= 7) {
-              pageNum = i + 1;
-            } else if (currentPage <= 4) {
-              pageNum = i < 6 ? i + 1 : totalPages;
-            } else if (currentPage >= totalPages - 3) {
-              pageNum = i === 0 ? 1 : totalPages - 6 + i;
-            } else {
-              pageNum = i === 0 ? 1 : i === 6 ? totalPages : currentPage - 2 + i;
-            }
-            const isEllipsis =
-              (i === 5 && totalPages > 7 && currentPage <= 4) ||
-              (i === 1 && totalPages > 7 && currentPage >= totalPages - 3);
-
-            if (isEllipsis) {
-              return (
-                <span key={`ellipsis-${i}`} className="px-2 text-slate-600 text-xs">
-                  {'\u2026'}
-                </span>
-              );
-            }
-
-            return (
-              <button
-                key={pageNum}
-                onClick={() => setCurrentPage(pageNum)}
-                className={`w-8 h-8 rounded text-xs font-mono transition ${
-                  pageNum === currentPage
-                    ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30'
-                    : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800'
-                }`}
-              >
-                {pageNum}
-              </button>
-            );
-          })}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 8,
+          paddingTop: 4,
+        }}>
+          <button
+            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+            disabled={currentPage === 1}
+            className="btn-secondary"
+            style={{ height: 28, padding: '0 8px' }}
+          >
+            <ChevronLeft size={14} />
+          </button>
+          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+            {currentPage} / {totalPages}
+          </span>
+          <button
+            onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+            disabled={currentPage === totalPages}
+            className="btn-secondary"
+            style={{ height: 28, padding: '0 8px' }}
+          >
+            <ChevronRight size={14} />
+          </button>
         </div>
       )}
     </div>
