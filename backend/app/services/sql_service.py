@@ -323,7 +323,7 @@ Return JSON: {{"sql": "...", "explanation": "...", "confidence": 0.0-1.0}}
                 "temperature": 0.0,
             }
             try:
-                async with httpx.AsyncClient(timeout=30.0) as client:
+                async with httpx.AsyncClient(timeout=12.0) as client:
                     resp = await client.post(f"{settings.DEEPSEEK_BASE_URL}/chat/completions", headers=headers, json=payload)
                     resp.raise_for_status()
                     data = resp.json()
