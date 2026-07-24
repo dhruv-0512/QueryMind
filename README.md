@@ -95,7 +95,7 @@ On upload, the system:
    - **LLM Adaptation (Cosine Similarity < 78%)**: When similarity is below 78%, structural template remapping is not safe. The schema and top retrieved examples are passed to **DeepSeek AI** (or Gemini) to reason about complex multi-clause query construction.
 5. **Circuit Breaker Protection**: Wraps external LLM network calls. If 5 consecutive API errors occur, the circuit opens for 30s, failing fast in `<1ms` to keep backend threads responsive.
 6. **SQL Safety & Execution**: Enforces read-only SELECT/WITH statements and runs against the user's isolated PostgreSQL temp schema.
-7. **Caching & Event Audit**: Caches results in **Redis** (1 hour TTL) and publishes asynchronous events to **Kafka**, where `audit_consumer` logs audit trails into Postgres.
+7. **Caching & Idempotent Event Audit**: Caches query results in **Redis** (1 hour TTL) and streams asynchronous events across 4 topics to **Apache Kafka**. A background `audit_consumer` executes **idempotent database writes** (`ON CONFLICT (event_id) DO NOTHING`), preventing duplicate audit entries if consumer offsets are redelivered upon restart.
 
 ## Environment Variables
 
