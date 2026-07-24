@@ -90,9 +90,9 @@ On upload, the system:
 3. **RAG Retrieval** runs two searches in parallel against ChromaDB:
    - Retrieves the **table schema** (column names, types) for the target database
    - Retrieves the **top-5 most similar question→SQL pairs** from a curated pool of ~2,000 real-world examples sourced from Spider and WikiSQL.
-4. **SQL Generation** evaluates pathways:
-   - **RAG-Direct** (similarity ≥ 78%): The closest example's SQL structure is directly adapted — table and column names are automatically remapped and double-quoted (`"Democratic votes"`).
-   - **LLM Adaptation**: Schema + top examples are sent to **DeepSeek** (or Gemini) with strict instructions to preserve SQL structure and double-quote all identifiers.
+4. **SQL Generation Pathways & The 78% Threshold**:
+   - **RAG-Direct (Cosine Similarity ≥ 78%)**: When a user question matches an indexed SQL template with high confidence ($\ge 78\%$), direct Python template remapping is triggered. This executes in **<15ms with $0 API cost**, skipping LLM calls completely while eliminating model hallucination risks for common query patterns.
+   - **LLM Adaptation (Cosine Similarity < 78%)**: When similarity is below 78%, structural template remapping is not safe. The schema and top retrieved examples are passed to **DeepSeek AI** (or Gemini) to reason about complex multi-clause query construction.
 5. **Circuit Breaker Protection**: Wraps external LLM network calls. If 5 consecutive API errors occur, the circuit opens for 30s, failing fast in `<1ms` to keep backend threads responsive.
 6. **SQL Safety & Execution**: Enforces read-only SELECT/WITH statements and runs against the user's isolated PostgreSQL temp schema.
 7. **Caching & Event Audit**: Caches results in **Redis** (1 hour TTL) and publishes asynchronous events to **Kafka**, where `audit_consumer` logs audit trails into Postgres.
