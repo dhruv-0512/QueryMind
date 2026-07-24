@@ -1,4 +1,5 @@
 import json
+import uuid
 import logging
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional
@@ -48,6 +49,11 @@ class KafkaService:
             return
 
         event = {
+            # Unique event ID — the audit consumer uses this with
+            # INSERT ... ON CONFLICT (event_id) DO NOTHING to guarantee
+            # exactly-once processing even when Kafka replays offsets
+            # after a consumer crash or rebalance.
+            "event_id": str(uuid.uuid4()),
             "event_type": event_type,
             "user_id": user_id,
             "timestamp": datetime.now(timezone.utc).isoformat(),

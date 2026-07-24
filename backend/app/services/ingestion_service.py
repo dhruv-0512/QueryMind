@@ -28,9 +28,10 @@ PG_TYPE_MAP = {
 }
 
 
-def safe_identifier(name: str) -> str:
-    """Sanitize a string into a safe PostgreSQL identifier."""
-    cleaned = re.sub(r"[^a-zA-Z0-9_]", "_", name)
+def safe_identifier(name: Any) -> str:
+    """Sanitize a string or value into a safe PostgreSQL identifier."""
+    name_str = str(name) if name is not None else "unknown"
+    cleaned = re.sub(r"[^a-zA-Z0-9_]", "_", name_str)
     cleaned = re.sub(r"^[^a-zA-Z]+", "", cleaned)
     return cleaned.lower()[:63] if cleaned else "unknown"
 

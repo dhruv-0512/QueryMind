@@ -83,4 +83,32 @@ class CacheService:
             logger.error(f"Rate limiting evaluation failed: {e}")
             return False, 0
 
+    async def invalidate_db_cache(self, db_id: str) -> None:
+        """
+        Invalidate all cached query results for a specific database.
+
+        Called when a database is deleted — prevents stale cache from serving
+        results for a database whose underlying schema no longer exists.
+        Without this, users could get confusing "successful" responses with
+        data from a deleted database until the TTL expires.
+
+        Uses SCAN (cursor-based, non-blocking) instead of KEYS (which blocks
+        the Redis event loop on large keyspaces).
+        """
+        try:
+            # Pattern matches any user's cached queries for this db_id.
+            # Cache key format: query_cache:{user_id}:{db_id}:{question_hash}
+            pattern = f"query_cache:*:{db_id}:*"
+            deleted = 0
+            async for key in self.redis_client.scan_iter(match=pattern, count=100):
+                await self.redis_client.delete(key)
+                deleted += 1
+            if deleted:
+                logger.info(
+                    f"Invalidated {deleted} cached query entries for database {db_id}"
+                )
+        except Exception as e:
+            # Cache invalidation is best-effort — don't crash the delete flow
+            logger.error(f"Cache invalidation error for database {db_id}: {e}")
+
 cache_service = CacheService()

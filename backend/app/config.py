@@ -15,7 +15,11 @@ class Settings(BaseSettings):
     CHROMADB_PORT: int
 
     # LLM Configuration
-    GEMINI_API_KEY: str
+    GEMINI_API_KEY: str = ""
+    DEEPSEEK_API_KEY: str = ""
+    DEEPSEEK_BASE_URL: str = "https://api.deepseek.com"
+    DEEPSEEK_MODEL: str = "deepseek-chat"
+    LLM_PROVIDER: str = "deepseek"
 
     # Embeddings: local (no quota), gemini (API), auto (gemini with local fallback)
     EMBEDDING_PROVIDER: str = "local"

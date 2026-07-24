@@ -8,6 +8,7 @@ from decimal import Decimal
 from typing import Dict, Any, List, Tuple, Optional
 import google.generativeai as genai
 from app.config import settings
+from app.utils.circuit_breaker import CircuitBreaker, CircuitOpenError
 from app.utils.embeddings import is_api_key_configured
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
@@ -15,6 +16,20 @@ from sqlalchemy import text
 logger = logging.getLogger(__name__)
 
 RAG_DIRECT_THRESHOLD = 0.78
+
+# Circuit breaker for the Gemini API.
+# Trips after 5 consecutive failures (timeout, HTTP error, malformed response),
+# stays open for 30 seconds (all requests fail fast with CircuitOpenError),
+# then allows one half-open trial before fully closing.
+# This protects the backend when Gemini is down: instead of every request
+# blocking for 25s (the asyncio.wait_for timeout), they fail in <1ms,
+# keeping the server responsive for cached queries and non-AI endpoints.
+gemini_circuit = CircuitBreaker(
+    failure_threshold=5,
+    recovery_timeout=30.0,
+    name="gemini_api",
+)
+
 SQL_KEYWORDS = {
     "select", "from", "where", "group", "by", "order", "having", "join",
     "inner", "left", "right", "outer", "on", "as", "and", "or", "not",
@@ -24,15 +39,22 @@ SQL_KEYWORDS = {
 }
 
 
+import httpx
+
 class SqlService:
     def __init__(self) -> None:
-        if is_api_key_configured():
+        if settings.DEEPSEEK_API_KEY:
+            logger.info(f"DeepSeek API configured with model {settings.DEEPSEEK_MODEL}.")
+            self.llm_provider = "deepseek"
+        elif is_api_key_configured():
             genai.configure(api_key=settings.GEMINI_API_KEY)
             self.model = genai.GenerativeModel("gemini-3.5-flash")
+            self.llm_provider = "gemini"
             logger.info("Gemini Model gemini-3.5-flash initialized for SQL Service.")
         else:
-            logger.warning("GEMINI_API_KEY is not configured. SQL service will use mock generation.")
+            logger.warning("No LLM API key configured. SQL service will use mock generation.")
             self.model = None
+            self.llm_provider = "mock"
 
     def _extract_table_from_schema(self, schema_context: str) -> str:
         match = re.search(
@@ -53,13 +75,21 @@ class SqlService:
         cols = []
         for line in schema_context.split("\n"):
             line = line.strip()
-            m = re.match(
-                r'^"?(\w+)"?\s+(TEXT|INTEGER|BIGINT|BOOLEAN|TIMESTAMP|FLOAT|DOUBLE|NUMERIC|SERIAL|UUID|DATE|VARCHAR)',
+            m = re.search(
+                r'"([^"]+)"\s+(TEXT|INTEGER|BIGINT|SMALLINT|BOOLEAN|TIMESTAMP|FLOAT|DOUBLE|REAL|NUMERIC|SERIAL|UUID|DATE|VARCHAR|INTERVAL|DOUBLE PRECISION)',
                 line,
                 re.IGNORECASE,
             )
-            if m and not line.startswith(("CREATE", "PRIMARY", "FOREIGN", "INDEX", ")")):
+            if m:
                 cols.append(m.group(1))
+            else:
+                m2 = re.search(
+                    r'\b([a-zA-Z0-9_]+)\s+(TEXT|INTEGER|BIGINT|SMALLINT|BOOLEAN|TIMESTAMP|FLOAT|DOUBLE|REAL|NUMERIC|SERIAL|UUID|DATE|VARCHAR|INTERVAL|DOUBLE PRECISION)',
+                    line,
+                    re.IGNORECASE,
+                )
+                if m2 and not line.startswith(("CREATE", "PRIMARY", "FOREIGN", "INDEX", ")")):
+                    cols.append(m2.group(1))
         return cols
 
     def _quote_identifier(self, identifier: str) -> str:
@@ -68,17 +98,16 @@ class SqlService:
 
     def _quote_schema_identifiers(self, sql: str, table_name: str, columns: List[str]) -> str:
         quoted = sql
-        identifiers = [table_name, *columns]
-        for identifier in sorted(set(identifiers), key=len, reverse=True):
-            if not identifier:
+        # Quote table name if needed
+        if table_name and " " in table_name:
+            quoted = re.sub(rf'(?<!["\w]){re.escape(table_name)}(?!["\w])', f'"{table_name}"', quoted, flags=re.IGNORECASE)
+        # Quote each column
+        for col in sorted(columns, key=len, reverse=True):
+            if not col:
                 continue
-            replacement = self._quote_identifier(identifier)
-            quoted = re.sub(
-                rf'(?<!["\w]){re.escape(identifier)}(?!["\w])',
-                replacement,
-                quoted,
-                flags=re.IGNORECASE,
-            )
+            if " " in col or not col.isalnum():
+                pattern = rf'(?<!["\w]){re.escape(col)}(?!["\w])'
+                quoted = re.sub(pattern, f'"{col}"', quoted, flags=re.IGNORECASE)
         return quoted
 
     def _normalize_string_literals(self, sql: str, columns: List[str]) -> str:
@@ -144,7 +173,8 @@ class SqlService:
                 col_map[token] = mapped
 
         for old, new in sorted(col_map.items(), key=lambda x: -len(x[0])):
-            adapted = re.sub(rf"\b{re.escape(old)}\b", new, adapted)
+            replacement = f'"{new}"' if " " in new or not new.isalnum() else new
+            adapted = re.sub(rf"\b{re.escape(old)}\b", replacement, adapted)
 
         if not adapted.upper().startswith("SELECT"):
             return None
@@ -167,6 +197,10 @@ class SqlService:
         adapted_sql = self._adapt_sql_from_example(top["sql"], schema_context)
         if not adapted_sql:
             return None
+
+        target_table = self._extract_table_from_schema(schema_context)
+        schema_cols = self._extract_columns_from_schema(schema_context)
+        adapted_sql = self._quote_schema_identifiers(adapted_sql, target_table, schema_cols)
 
         logger.info(
             f"RAG-direct adaptation (similarity={similarity:.2f}): "
@@ -223,10 +257,10 @@ You are a SQL adaptation engine, not a free-form generator.
 {top_hint}
 1. Start from the most similar example's SQL structure.
 2. Remap ALL table and column names to match SCHEMA exactly.
-3. Preserve clauses (WHERE, GROUP BY, JOIN, ORDER BY, aggregates) from the example.
-4. Do NOT invent new tables or columns not in SCHEMA.
-5. Retrieved SQL is a structural template only — adapt it, do not copy identifiers.
-6. Generate PostgreSQL SELECT only.
+3. IMPORTANT: Every table name and column name in your generated SQL MUST be enclosed in double quotes (e.g., "column_name", "table_name").
+4. Preserve clauses (WHERE, GROUP BY, JOIN, ORDER BY, aggregates) from the example.
+5. Do NOT invent new tables or columns not in SCHEMA.
+6. Generate valid PostgreSQL SELECT only.
 
 Return JSON: {{"sql": "...", "explanation": "...", "confidence": 0.0-1.0}}
 """
@@ -273,21 +307,81 @@ Return JSON: {{"sql": "...", "explanation": "...", "confidence": 0.0-1.0}}
                 "rag_mode": "mock",
             }
 
+        if self.llm_provider == "deepseek":
+            prompt = self._build_rag_prompt(schema_context, user_question, retrieved_examples)
+            headers = {
+                "Authorization": f"Bearer {settings.DEEPSEEK_API_KEY}",
+                "Content-Type": "application/json",
+            }
+            payload = {
+                "model": settings.DEEPSEEK_MODEL,
+                "messages": [
+                    {"role": "system", "content": "You are a specialized SQL adaptation engine that outputs only valid JSON with keys: sql, explanation, confidence."},
+                    {"role": "user", "content": prompt}
+                ],
+                "response_format": {"type": "json_object"},
+                "temperature": 0.0,
+            }
+            try:
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    resp = await client.post(f"{settings.DEEPSEEK_BASE_URL}/chat/completions", headers=headers, json=payload)
+                    resp.raise_for_status()
+                    data = resp.json()
+                    raw_content = data["choices"][0]["message"]["content"].strip()
+                    result = json.loads(raw_content)
+                    if "sql" in result:
+                        tbl = self._extract_table_from_schema(schema_context)
+                        cols = self._extract_columns_from_schema(schema_context)
+                        result["sql"] = self._quote_schema_identifiers(result["sql"], tbl, cols)
+                    result.setdefault("explanation", "Generated via DeepSeek AI.")
+                    result.setdefault("confidence", 0.9)
+                    result["rag_mode"] = "deepseek_llm"
+                    return result
+            except Exception as e:
+                logger.error(f"DeepSeek generation error: {e}")
+                err_msg = str(e)
+                if "429" in err_msg or "quota" in err_msg.lower():
+                    tbl = self._extract_table_from_schema(schema_context)
+                    cols = self._extract_columns_from_schema(schema_context)
+                    if retrieved_examples:
+                        adapted = self._adapt_sql_from_example(retrieved_examples[0]["sql"], schema_context)
+                        if adapted:
+                            adapted = self._quote_schema_identifiers(adapted, tbl, cols)
+                            return {
+                                "sql": adapted,
+                                "explanation": "Adapted from top SQL example (API quota fallback).",
+                                "confidence": 0.85,
+                                "rag_mode": "fallback_rag",
+                            }
+                    return {
+                        "sql": f"SELECT * FROM {tbl} LIMIT 10;",
+                        "explanation": f"Baseline query over {tbl} (API quota fallback).",
+                        "confidence": 0.70,
+                        "rag_mode": "fallback_schema",
+                    }
+                raise e
+
         if not self.model:
             raise RuntimeError("Gemini API client is not configured.")
 
         prompt = self._build_rag_prompt(schema_context, user_question, retrieved_examples)
 
         try:
-            response = await asyncio.wait_for(
-                self.model.generate_content_async(
-                    prompt,
-                    generation_config={
-                        "response_mime_type": "application/json",
-                        "temperature": 0.0,
-                    },
-                ),
-                timeout=25.0
+            # Circuit breaker wraps ONLY the Gemini network call.
+            # If Gemini has failed 5 times in a row, this raises
+            # CircuitOpenError immediately (<1ms) instead of waiting
+            # 25 seconds for another inevitable timeout.
+            response = await gemini_circuit.call(
+                asyncio.wait_for(
+                    self.model.generate_content_async(
+                        prompt,
+                        generation_config={
+                            "response_mime_type": "application/json",
+                            "temperature": 0.0,
+                        },
+                    ),
+                    timeout=25.0,
+                )
             )
             raw_text = response.text.strip()
             result = json.loads(raw_text)
@@ -297,10 +391,34 @@ Return JSON: {{"sql": "...", "explanation": "...", "confidence": 0.0-1.0}}
             result.setdefault("confidence", 0.8)
             result["rag_mode"] = "llm_adapt"
             return result
+        except CircuitOpenError:
+            # Let CircuitOpenError propagate — the router translates it to 503
+            raise
         except json.JSONDecodeError as je:
             logger.error(f"Failed to parse Gemini JSON: {je}")
             raise ValueError("Gemini returned invalid JSON. Please retry.")
         except Exception as e:
+            err_msg = str(e)
+            if "429" in err_msg or "quota" in err_msg.lower():
+                logger.warning(f"Gemini quota exceeded ({err_msg}). Falling back to template adaptation.")
+                tbl = self._extract_table_from_schema(schema_context)
+                cols = self._extract_columns_from_schema(schema_context)
+                if retrieved_examples:
+                    adapted = self._adapt_sql_from_example(retrieved_examples[0]["sql"], schema_context)
+                    if adapted:
+                        return {
+                            "sql": adapted,
+                            "explanation": "Adapted from top SQL example (Gemini API quota reached).",
+                            "confidence": 0.85,
+                            "rag_mode": "fallback_rag",
+                        }
+                first_col = cols[0] if cols else "*"
+                return {
+                    "sql": f"SELECT * FROM {tbl} LIMIT 10;",
+                    "explanation": f"Generated baseline query over {tbl} (Gemini API quota reached).",
+                    "confidence": 0.70,
+                    "rag_mode": "fallback_schema",
+                }
             logger.error(f"Gemini SQL generation error: {e}")
             raise e
 

@@ -21,12 +21,15 @@ from app.services.cache_service import cache_service
 from app.services.kafka_service import kafka_service
 from app.utils.sql_validator import validate_sql_query
 from app.middleware.rate_limiter import rate_limiter
+from app.utils.circuit_breaker import CircuitOpenError
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/query", tags=["Queries"])
 
-CACHE_TTL = 3600
+# 5-minute TTL — short enough that data re-uploads are reflected quickly,
+# long enough to absorb repeated identical queries during a single analysis session.
+CACHE_TTL = 300
 
 
 def get_question_hash(question: str) -> str:
@@ -56,7 +59,10 @@ async def execute_nl_query(
 
     # Step 1: Redis cache
     question_hash = get_question_hash(question)
-    cache_key = f"query_cache:{request.db_id}:{question_hash}"
+    # Cache key includes user_id for per-user isolation.
+    # Without this, user A could see user B's cached results for a shared
+    # database, leaking data across tenant boundaries.
+    cache_key = f"query_cache:{user_id}:{request.db_id}:{question_hash}"
 
     cached_data = await cache_service.get_cache(cache_key)
     if cached_data:
@@ -138,6 +144,12 @@ async def execute_nl_query(
         sql = gen_result["sql"]
         explanation = gen_result["explanation"]
         confidence = gen_result["confidence"]
+    except CircuitOpenError as e:
+        # Circuit breaker tripped — Gemini has failed 5+ times consecutively.
+        # Return 503 (not 500) to signal a *temporary* upstream outage.
+        # Clients should retry after the Retry-After period.
+        logger.warning(f"Circuit breaker open for Gemini: {e}")
+        raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         logger.error(f"SQL generation failed: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to generate SQL: {str(e)}")

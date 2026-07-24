@@ -14,6 +14,7 @@ from app.schemas.database import DatabaseResponse, DatabaseUploadResponse
 from app.services.schema_service import schema_service
 from app.services.rag_service import rag_service
 from app.services.kafka_service import kafka_service
+from app.services.cache_service import cache_service
 from app.services.ingestion_service import (
     safe_identifier,
     read_file_to_dataframe,
@@ -176,6 +177,12 @@ async def delete_database(
         await rag_service.delete_schema(str(id))
     except Exception as e:
         logger.error(f"Error deleting ChromaDB entries for {id}: {e}")
+
+    # Invalidate Redis-cached query results for this database.
+    # Failure mode: without this, cached responses linger until TTL expires,
+    # so a user could delete a database and still get "successful" responses
+    # with stale data from the cache — while the underlying schema no longer exists.
+    await cache_service.invalidate_db_cache(str(id))
 
     # Remove DB record
     await db.delete(db_conn)

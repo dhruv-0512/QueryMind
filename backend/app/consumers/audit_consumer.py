@@ -6,6 +6,7 @@ import os
 from uuid import UUID
 from aiokafka import AIOKafkaConsumer
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 # Ensure project root is in the path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
@@ -57,28 +58,59 @@ async def consume_events() -> None:
                 event = msg.value
                 event_type = event.get("event_type", "Unknown")
                 user_id_str = event.get("user_id")
+                event_id_str = event.get("event_id")
                 payload = event.get("payload", {})
 
                 logger.info(f"Received event '{event_type}' from topic '{msg.topic}'")
 
-                # Parse UUID safely
+                # Parse UUIDs safely
                 user_id = None
                 if user_id_str:
                     try:
                         user_id = UUID(user_id_str)
                     except ValueError:
-                        logger.warning(f"Invalid UUID string format for user_id: {user_id_str}")
+                        logger.warning(f"Invalid UUID format for user_id: {user_id_str}")
 
-                # Insert into DB
+                event_id = None
+                if event_id_str:
+                    try:
+                        event_id = UUID(event_id_str)
+                    except ValueError:
+                        logger.warning(f"Invalid UUID format for event_id: {event_id_str}")
+
+                # Insert into DB — idempotent when event_id is present.
+                # Failure mode this prevents: if the consumer crashes after writing
+                # to Postgres but before Kafka commits the offset, the message is
+                # redelivered on restart.  Without deduplication, that creates a
+                # duplicate audit row (inflating metrics, corrupting audit trail).
+                # ON CONFLICT (event_id) DO NOTHING silently skips the duplicate.
                 async with SessionLocal() as session:
-                    audit_record = AuditLog(
-                        user_id=user_id,
-                        event_type=event_type,
-                        payload=payload
-                    )
-                    session.add(audit_record)
-                    await session.commit()
-                    logger.info(f"Recorded event '{event_type}' to audit_logs successfully.")
+                    if event_id:
+                        stmt = pg_insert(AuditLog).values(
+                            event_id=event_id,
+                            user_id=user_id,
+                            event_type=event_type,
+                            payload=payload,
+                        ).on_conflict_do_nothing(index_elements=["event_id"])
+                        result = await session.execute(stmt)
+                        await session.commit()
+                        if result.rowcount == 0:
+                            logger.info(
+                                f"Duplicate event '{event_type}' "
+                                f"(event_id={event_id}) — skipped (idempotent)"
+                            )
+                        else:
+                            logger.info(f"Recorded event '{event_type}' to audit_logs.")
+                    else:
+                        # Fallback for legacy events produced before event_id was added
+                        audit_record = AuditLog(
+                            user_id=user_id,
+                            event_type=event_type,
+                            payload=payload,
+                        )
+                        session.add(audit_record)
+                        await session.commit()
+                        logger.info(f"Recorded legacy event '{event_type}' (no event_id).")
 
             except Exception as item_error:
                 logger.error(f"Error processing consumed message: {item_error}")
