@@ -1,0 +1,851 @@
+[
+    {
+        "id": "aviation_001",
+        "question": "How many flights are currently in the system?",
+        "paraphrase": "Can you tell me how many flights are currently in the system?",
+        "expected_sql": "SELECT COUNT(*) FROM flights;",
+        "expected_result": [
+            {
+                "COUNT(*)": 5
+            }
+        ],
+        "difficulty": "easy",
+        "category": "simple filtering"
+    },
+    {
+        "id": "aviation_002",
+        "question": "Which airline had the highest cancellation rate?",
+        "paraphrase": "Identify which airline had the highest cancellation rate?",
+        "expected_sql": "SELECT al.airline_name, ROUND(100.0*SUM(CASE WHEN f.status='Cancelled' THEN 1 ELSE 0 END)/COUNT(*),2) AS cancel_rate FROM flights f JOIN airlines al ON f.airline_id=al.airline_id GROUP BY al.airline_id ORDER BY cancel_rate DESC LIMIT 1;",
+        "expected_result": [
+            {
+                "airline_name": "SkyBridge Airlines",
+                "cancel_rate": 50.0
+            }
+        ],
+        "difficulty": "medium",
+        "category": "GROUP BY"
+    },
+    {
+        "id": "aviation_003",
+        "question": "List all passengers with Platinum frequent flyer status.",
+        "paraphrase": "Find all passengers with Platinum frequent flyer status.",
+        "expected_sql": "SELECT first_name, last_name, nationality FROM passengers WHERE frequent_flyer_tier = 'Platinum';",
+        "expected_result": [
+            {
+                "first_name": "Amelia",
+                "last_name": "Earhart",
+                "nationality": "American"
+            },
+            {
+                "first_name": "Howard",
+                "last_name": "Hughes",
+                "nationality": "American"
+            }
+        ],
+        "difficulty": "easy",
+        "category": "simple filtering"
+    },
+    {
+        "id": "aviation_004",
+        "question": "Which airline transported the highest number of passengers based on confirmed bookings?",
+        "paraphrase": "What specific airline transported the highest number of passengers based on confirmed bookings?",
+        "expected_sql": "SELECT al.airline_name, COUNT(*) AS passengers_transported FROM bookings b JOIN flights f ON b.flight_id=f.flight_id JOIN airlines al ON f.airline_id=al.airline_id WHERE b.booking_status='Confirmed' GROUP BY al.airline_id ORDER BY passengers_transported DESC LIMIT 1;",
+        "expected_result": [
+            {
+                "airline_name": "SkyBridge Airlines",
+                "passengers_transported": 2
+            }
+        ],
+        "difficulty": "medium",
+        "category": "GROUP BY"
+    },
+    {
+        "id": "aviation_005",
+        "question": "What is the average fare amount by seat class?",
+        "paraphrase": "Calculate the mean fare amount by seat class?",
+        "expected_sql": "SELECT seat_class, ROUND(AVG(fare_amount),2) AS avg_fare FROM bookings GROUP BY seat_class ORDER BY avg_fare DESC;",
+        "expected_result": [
+            {
+                "seat_class": "First",
+                "avg_fare": 2650.0
+            },
+            {
+                "seat_class": "Business",
+                "avg_fare": 1275.0
+            },
+            {
+                "seat_class": "Economy",
+                "avg_fare": 415.0
+            }
+        ],
+        "difficulty": "easy",
+        "category": "aggregation"
+    },
+    {
+        "id": "aviation_006",
+        "question": "How many distinct passengers have flown with SkyBridge Airlines?",
+        "paraphrase": "Can you tell me how many distinct passengers have flown with SkyBridge Airlines?",
+        "expected_sql": "SELECT COUNT(DISTINCT b.passenger_id) FROM bookings b JOIN flights f ON b.flight_id=f.flight_id JOIN airlines al ON f.airline_id=al.airline_id WHERE al.airline_name='SkyBridge Airlines';",
+        "expected_result": [
+            {
+                "COUNT(DISTINCT b.passenger_id)": 2
+            }
+        ],
+        "difficulty": "medium",
+        "category": "COUNT DISTINCT"
+    },
+    {
+        "id": "aviation_007",
+        "question": "Which airports have the most departing flights?",
+        "paraphrase": "Identify which airports have the most departing flights?",
+        "expected_sql": "SELECT ap.city, ap.airport_code, COUNT(*) AS departures FROM flights f JOIN airports ap ON f.origin_airport_id=ap.airport_id GROUP BY ap.airport_id ORDER BY departures DESC LIMIT 5;",
+        "expected_result": [
+            {
+                "city": "New York",
+                "airport_code": "JFK",
+                "departures": 2
+            },
+            {
+                "city": "Tokyo",
+                "airport_code": "HND",
+                "departures": 1
+            },
+            {
+                "city": "Dubai",
+                "airport_code": "DXB",
+                "departures": 1
+            },
+            {
+                "city": "London",
+                "airport_code": "LHR",
+                "departures": 1
+            }
+        ],
+        "difficulty": "medium",
+        "category": "GROUP BY"
+    },
+    {
+        "id": "aviation_008",
+        "question": "List passengers who have made more than 8 bookings.",
+        "paraphrase": "Can you show me list passengers who have made more than 8 bookings.?",
+        "expected_sql": "SELECT p.first_name, p.last_name, COUNT(*) AS num_bookings FROM bookings b JOIN passengers p ON b.passenger_id=p.passenger_id GROUP BY p.passenger_id HAVING COUNT(*) > 8 ORDER BY num_bookings DESC;",
+        "expected_result": [],
+        "difficulty": "medium",
+        "category": "HAVING"
+    },
+    {
+        "id": "aviation_009",
+        "question": "What is the total revenue generated from Business class bookings?",
+        "paraphrase": "Can you show me what is the total revenue generated from business class bookings??",
+        "expected_sql": "SELECT ROUND(SUM(fare_amount),2) AS total_revenue FROM bookings WHERE seat_class='Business' AND booking_status='Confirmed';",
+        "expected_result": [
+            {
+                "total_revenue": 1200.0
+            }
+        ],
+        "difficulty": "easy",
+        "category": "aggregation"
+    },
+    {
+        "id": "aviation_010",
+        "question": "Which aircraft model is used most frequently across all airlines?",
+        "paraphrase": "What specific aircraft model is used most frequently across all airlines?",
+        "expected_sql": "SELECT model, COUNT(*) AS num_aircraft FROM aircraft GROUP BY model ORDER BY num_aircraft DESC LIMIT 1;",
+        "expected_result": [
+            {
+                "model": "Boeing 787",
+                "num_aircraft": 1
+            }
+        ],
+        "difficulty": "easy",
+        "category": "GROUP BY"
+    },
+    {
+        "id": "aviation_011",
+        "question": "Find flights that were delayed departing from JFK.",
+        "paraphrase": "Can you show me find flights that were delayed departing from jfk.?",
+        "expected_sql": "SELECT f.flight_number, f.departure_time, f.status FROM flights f JOIN airports ap ON f.origin_airport_id=ap.airport_id WHERE ap.airport_code='JFK' AND f.status='Delayed';",
+        "expected_result": [],
+        "difficulty": "easy",
+        "category": "JOIN"
+    },
+    {
+        "id": "aviation_012",
+        "question": "How many bookings have no associated fare amount recorded?",
+        "paraphrase": "What is the total count of bookings have no associated fare amount recorded?",
+        "expected_sql": "SELECT COUNT(*) FROM bookings WHERE fare_amount IS NULL;",
+        "expected_result": [
+            {
+                "COUNT(*)": 0
+            }
+        ],
+        "difficulty": "easy",
+        "category": "NULL handling"
+    },
+    {
+        "id": "aviation_013",
+        "question": "Which passengers have flown on more than 3 different airlines?",
+        "paraphrase": "Find which passengers have flown on more than 3 different airlines?",
+        "expected_sql": "SELECT p.first_name, p.last_name, COUNT(DISTINCT f.airline_id) AS num_airlines FROM bookings b JOIN passengers p ON b.passenger_id=p.passenger_id JOIN flights f ON b.flight_id=f.flight_id GROUP BY p.passenger_id HAVING COUNT(DISTINCT f.airline_id) > 3;",
+        "expected_result": [],
+        "difficulty": "hard",
+        "category": "HAVING"
+    },
+    {
+        "id": "aviation_014",
+        "question": "What is the average flight duration in hours for each airline?",
+        "paraphrase": "Find the average flight duration in hours for each airline?",
+        "expected_sql": "SELECT al.airline_name, ROUND(AVG((julianday(f.arrival_time)-julianday(f.departure_time))*24),2) AS avg_duration_hrs FROM flights f JOIN airlines al ON f.airline_id=al.airline_id GROUP BY al.airline_id ORDER BY avg_duration_hrs DESC;",
+        "expected_result": [
+            {
+                "airline_name": "SkyBridge Airlines",
+                "avg_duration_hrs": 13.5
+            },
+            {
+                "airline_name": "Pacific Orient",
+                "avg_duration_hrs": 12.0
+            },
+            {
+                "airline_name": "TransAtlantic Air",
+                "avg_duration_hrs": 8.0
+            },
+            {
+                "airline_name": "Global Express",
+                "avg_duration_hrs": 8.0
+            }
+        ],
+        "difficulty": "hard",
+        "category": "date functions"
+    },
+    {
+        "id": "aviation_015",
+        "question": "List the 5 most recent bookings made.",
+        "paraphrase": "Can you show me list the 5 most recent bookings made.?",
+        "expected_sql": "SELECT booking_id, passenger_id, booking_date, seat_class FROM bookings ORDER BY booking_date DESC LIMIT 5;",
+        "expected_result": [
+            {
+                "booking_id": 1006,
+                "passenger_id": 5,
+                "booking_date": "2024-02-25 12:00:00",
+                "seat_class": "First"
+            },
+            {
+                "booking_id": 1005,
+                "passenger_id": 1,
+                "booking_date": "2024-02-01 16:20:00",
+                "seat_class": "Business"
+            },
+            {
+                "booking_id": 1004,
+                "passenger_id": 4,
+                "booking_date": "2024-01-20 11:45:00",
+                "seat_class": "Economy"
+            },
+            {
+                "booking_id": 1003,
+                "passenger_id": 3,
+                "booking_date": "2024-01-05 09:15:00",
+                "seat_class": "First"
+            },
+            {
+                "booking_id": 1002,
+                "passenger_id": 2,
+                "booking_date": "2024-01-03 14:30:00",
+                "seat_class": "Economy"
+            }
+        ],
+        "difficulty": "easy",
+        "category": "LIMIT"
+    },
+    {
+        "id": "aviation_016",
+        "question": "Which flights had zero confirmed bookings?",
+        "paraphrase": "What specific flights had zero confirmed bookings?",
+        "expected_sql": "SELECT f.flight_id, f.flight_number FROM flights f WHERE f.flight_id NOT IN (SELECT flight_id FROM bookings WHERE booking_status='Confirmed');",
+        "expected_result": [
+            {
+                "flight_id": 3,
+                "flight_number": "TA-305"
+            },
+            {
+                "flight_id": 4,
+                "flight_number": "SB-109"
+            }
+        ],
+        "difficulty": "medium",
+        "category": "nested queries"
+    },
+    {
+        "id": "aviation_017",
+        "question": "What is the total number of aircraft owned by each airline?",
+        "paraphrase": "Can you show me what is the total number of aircraft owned by each airline??",
+        "expected_sql": "SELECT al.airline_name, COUNT(*) AS num_aircraft FROM aircraft ac JOIN airlines al ON ac.airline_id=al.airline_id GROUP BY al.airline_id ORDER BY num_aircraft DESC;",
+        "expected_result": [
+            {
+                "airline_name": "Pacific Orient",
+                "num_aircraft": 1
+            },
+            {
+                "airline_name": "TransAtlantic Air",
+                "num_aircraft": 1
+            },
+            {
+                "airline_name": "Global Express",
+                "num_aircraft": 1
+            },
+            {
+                "airline_name": "SkyBridge Airlines",
+                "num_aircraft": 1
+            }
+        ],
+        "difficulty": "easy",
+        "category": "GROUP BY"
+    },
+    {
+        "id": "aviation_018",
+        "question": "Find passengers who booked flights but whose booking was later cancelled more than once.",
+        "paraphrase": "Can you show me find passengers who booked flights but whose booking was later cancelled more than once.?",
+        "expected_sql": "SELECT p.first_name, p.last_name, COUNT(*) AS cancelled_count FROM bookings b JOIN passengers p ON b.passenger_id=p.passenger_id WHERE b.booking_status='Cancelled' GROUP BY p.passenger_id HAVING COUNT(*) > 1 ORDER BY cancelled_count DESC;",
+        "expected_result": [],
+        "difficulty": "medium",
+        "category": "HAVING"
+    },
+    {
+        "id": "aviation_019",
+        "question": "What percentage of all flights were completed on schedule (status Completed)?",
+        "paraphrase": "Can you show me what percentage of all flights were completed on schedule (status completed)??",
+        "expected_sql": "SELECT ROUND(100.0*SUM(CASE WHEN status='Completed' THEN 1 ELSE 0 END)/COUNT(*),2) AS completed_pct FROM flights;",
+        "expected_result": [
+            {
+                "completed_pct": 40.0
+            }
+        ],
+        "difficulty": "medium",
+        "category": "aggregation"
+    },
+    {
+        "id": "aviation_020",
+        "question": "Which route (origin-destination pair) has the highest number of flights?",
+        "paraphrase": "What specific route (origin-destination pair) has the highest number of flights?",
+        "expected_sql": "SELECT o.airport_code AS origin, d.airport_code AS destination, COUNT(*) AS num_flights FROM flights f JOIN airports o ON f.origin_airport_id=o.airport_id JOIN airports d ON f.destination_airport_id=d.airport_id GROUP BY f.origin_airport_id, f.destination_airport_id ORDER BY num_flights DESC LIMIT 1;",
+        "expected_result": [
+            {
+                "origin": "JFK",
+                "destination": "LHR",
+                "num_flights": 1
+            }
+        ],
+        "difficulty": "hard",
+        "category": "multiple joins"
+    },
+    {
+        "id": "aviation_021",
+        "question": "How many passengers have never made a booking?",
+        "paraphrase": "What is the total count of passengers have never made a booking?",
+        "expected_sql": "SELECT COUNT(*) FROM passengers WHERE passenger_id NOT IN (SELECT DISTINCT passenger_id FROM bookings);",
+        "expected_result": [
+            {
+                "COUNT(*)": 0
+            }
+        ],
+        "difficulty": "medium",
+        "category": "nested queries"
+    },
+    {
+        "id": "aviation_022",
+        "question": "List airlines founded before 1980.",
+        "paraphrase": "Can you show me list airlines founded before 1980.?",
+        "expected_sql": "SELECT airline_name, founded_year FROM airlines WHERE founded_year < 1980 ORDER BY founded_year;",
+        "expected_result": [
+            {
+                "airline_name": "Pacific Orient",
+                "founded_year": 1968
+            },
+            {
+                "airline_name": "SkyBridge Airlines",
+                "founded_year": 1975
+            }
+        ],
+        "difficulty": "easy",
+        "category": "simple filtering"
+    },
+    {
+        "id": "aviation_023",
+        "question": "What is the average fare paid by passengers with Gold status versus those with no status?",
+        "paraphrase": "Find the average fare paid by passengers with Gold status versus those with no status?",
+        "expected_sql": "SELECT p.frequent_flyer_tier, ROUND(AVG(b.fare_amount),2) AS avg_fare FROM bookings b JOIN passengers p ON b.passenger_id=p.passenger_id WHERE p.frequent_flyer_tier IN ('Gold','None') GROUP BY p.frequent_flyer_tier;",
+        "expected_result": [
+            {
+                "frequent_flyer_tier": "Gold",
+                "avg_fare": 415.0
+            },
+            {
+                "frequent_flyer_tier": "None",
+                "avg_fare": 2500.0
+            }
+        ],
+        "difficulty": "medium",
+        "category": "GROUP BY"
+    },
+    {
+        "id": "aviation_024",
+        "question": "Which aircraft has flown the most flights?",
+        "paraphrase": "Find which aircraft has flown the most flights?",
+        "expected_sql": "SELECT ac.aircraft_id, ac.model, COUNT(*) AS num_flights FROM flights f JOIN aircraft ac ON f.aircraft_id=ac.aircraft_id GROUP BY ac.aircraft_id ORDER BY num_flights DESC LIMIT 1;",
+        "expected_result": [
+            {
+                "aircraft_id": 101,
+                "model": "Boeing 787",
+                "num_flights": 2
+            }
+        ],
+        "difficulty": "medium",
+        "category": "GROUP BY"
+    },
+    {
+        "id": "aviation_025",
+        "question": "Find the total fare revenue collected per month over the last year.",
+        "paraphrase": "Can you show me find the total fare revenue collected per month over the last year.?",
+        "expected_sql": "SELECT strftime('%Y-%m', booking_date) AS month, ROUND(SUM(fare_amount),2) AS revenue FROM bookings WHERE booking_status='Confirmed' GROUP BY month ORDER BY month;",
+        "expected_result": [
+            {
+                "month": "2024-01",
+                "revenue": 4150.0
+            },
+            {
+                "month": "2024-02",
+                "revenue": 2800.0
+            }
+        ],
+        "difficulty": "hard",
+        "category": "date functions"
+    },
+    {
+        "id": "aviation_026",
+        "question": "Which passengers have booked both Economy and First class seats?",
+        "paraphrase": "Identify which passengers have booked both Economy and First class seats?",
+        "expected_sql": "SELECT p.first_name, p.last_name FROM passengers p WHERE p.passenger_id IN (SELECT passenger_id FROM bookings WHERE seat_class='Economy') AND p.passenger_id IN (SELECT passenger_id FROM bookings WHERE seat_class='First');",
+        "expected_result": [],
+        "difficulty": "hard",
+        "category": "nested queries"
+    },
+    {
+        "id": "aviation_027",
+        "question": "What is the capacity utilization estimate (confirmed bookings vs aircraft capacity) for each flight, top 10 highest?",
+        "paraphrase": "Can you show me what is the capacity utilization estimate (confirmed bookings vs aircraft capacity) for each flight, top 10 highest??",
+        "expected_sql": "SELECT f.flight_number, COUNT(b.booking_id) AS confirmed_bookings, ac.capacity, ROUND(100.0*COUNT(b.booking_id)/ac.capacity,2) AS utilization_pct FROM flights f JOIN aircraft ac ON f.aircraft_id=ac.aircraft_id LEFT JOIN bookings b ON f.flight_id=b.flight_id AND b.booking_status='Confirmed' GROUP BY f.flight_id ORDER BY utilization_pct DESC LIMIT 10;",
+        "expected_result": [
+            {
+                "flight_number": "SB-101",
+                "confirmed_bookings": 2,
+                "capacity": 250,
+                "utilization_pct": 0.8
+            },
+            {
+                "flight_number": "PO-501",
+                "confirmed_bookings": 1,
+                "capacity": 160,
+                "utilization_pct": 0.63
+            },
+            {
+                "flight_number": "GX-204",
+                "confirmed_bookings": 1,
+                "capacity": 300,
+                "utilization_pct": 0.33
+            },
+            {
+                "flight_number": "TA-305",
+                "confirmed_bookings": 0,
+                "capacity": 180,
+                "utilization_pct": 0.0
+            },
+            {
+                "flight_number": "SB-109",
+                "confirmed_bookings": 0,
+                "capacity": 250,
+                "utilization_pct": 0.0
+            }
+        ],
+        "difficulty": "hard",
+        "category": "multiple joins"
+    },
+    {
+        "id": "aviation_028",
+        "question": "Which country has the most airlines headquartered there?",
+        "paraphrase": "What specific country has the most airlines headquartered there?",
+        "expected_sql": "SELECT country, COUNT(*) AS num_airlines FROM airlines GROUP BY country ORDER BY num_airlines DESC LIMIT 1;",
+        "expected_result": [
+            {
+                "country": "USA",
+                "num_airlines": 1
+            }
+        ],
+        "difficulty": "easy",
+        "category": "GROUP BY"
+    },
+    {
+        "id": "aviation_029",
+        "question": "List flights arriving at Dubai international airport (DXB).",
+        "paraphrase": "Can you show me list flights arriving at dubai international airport (dxb).?",
+        "expected_sql": "SELECT f.flight_number, f.arrival_time, f.status FROM flights f JOIN airports ap ON f.destination_airport_id=ap.airport_id WHERE ap.airport_code='DXB';",
+        "expected_result": [
+            {
+                "flight_number": "GX-204",
+                "arrival_time": "2024-01-12 18:00:00",
+                "status": "Completed"
+            },
+            {
+                "flight_number": "PO-501",
+                "arrival_time": "2024-03-01 21:00:00",
+                "status": "Scheduled"
+            }
+        ],
+        "difficulty": "easy",
+        "category": "JOIN"
+    },
+    {
+        "id": "aviation_030",
+        "question": "Which passenger has spent the most money on bookings in total?",
+        "paraphrase": "Identify which passenger has spent the most money on bookings in total?",
+        "expected_sql": "SELECT p.first_name, p.last_name, ROUND(SUM(b.fare_amount),2) AS total_spent FROM bookings b JOIN passengers p ON b.passenger_id=p.passenger_id WHERE b.booking_status='Confirmed' GROUP BY p.passenger_id ORDER BY total_spent DESC LIMIT 1;",
+        "expected_result": [
+            {
+                "first_name": "Howard",
+                "last_name": "Hughes",
+                "total_spent": 2800.0
+            }
+        ],
+        "difficulty": "medium",
+        "category": "GROUP BY"
+    },
+    {
+        "id": "aviation_031",
+        "question": "How many aircraft were manufactured after 2018?",
+        "paraphrase": "Can you tell me how many aircraft were manufactured after 2018?",
+        "expected_sql": "SELECT COUNT(*) FROM aircraft WHERE manufacture_year > 2018;",
+        "expected_result": [
+            {
+                "COUNT(*)": 3
+            }
+        ],
+        "difficulty": "easy",
+        "category": "simple filtering"
+    },
+    {
+        "id": "aviation_032",
+        "question": "Find airlines whose average booking fare exceeds the overall average fare across all airlines.",
+        "paraphrase": "Can you show me find airlines whose average booking fare exceeds the overall average fare across all airlines.?",
+        "expected_sql": "SELECT al.airline_name, ROUND(AVG(b.fare_amount),2) AS avg_fare FROM bookings b JOIN flights f ON b.flight_id=f.flight_id JOIN airlines al ON f.airline_id=al.airline_id GROUP BY al.airline_id HAVING AVG(b.fare_amount) > (SELECT AVG(fare_amount) FROM bookings);",
+        "expected_result": [
+            {
+                "airline_name": "Global Express",
+                "avg_fare": 2500.0
+            },
+            {
+                "airline_name": "Pacific Orient",
+                "avg_fare": 2800.0
+            }
+        ],
+        "difficulty": "hard",
+        "category": "correlated subqueries"
+    },
+    {
+        "id": "aviation_033",
+        "question": "What is the busiest month for flight departures?",
+        "paraphrase": "Can you show me what is the busiest month for flight departures??",
+        "expected_sql": "SELECT strftime('%Y-%m', departure_time) AS month, COUNT(*) AS num_departures FROM flights GROUP BY month ORDER BY num_departures DESC LIMIT 1;",
+        "expected_result": [
+            {
+                "month": "2024-02",
+                "num_departures": 2
+            }
+        ],
+        "difficulty": "medium",
+        "category": "date functions"
+    },
+    {
+        "id": "aviation_034",
+        "question": "List passengers born before 1960.",
+        "paraphrase": "Can you show me list passengers born before 1960.?",
+        "expected_sql": "SELECT first_name, last_name, birth_date FROM passengers WHERE birth_date < '1960-01-01';",
+        "expected_result": [
+            {
+                "first_name": "Amelia",
+                "last_name": "Earhart",
+                "birth_date": "1897-07-24"
+            },
+            {
+                "first_name": "Charles",
+                "last_name": "Lindbergh",
+                "birth_date": "1902-02-04"
+            },
+            {
+                "first_name": "Antoine",
+                "last_name": "De Saint-Exupery",
+                "birth_date": "1900-06-29"
+            },
+            {
+                "first_name": "Bessie",
+                "last_name": "Coleman",
+                "birth_date": "1892-01-26"
+            },
+            {
+                "first_name": "Howard",
+                "last_name": "Hughes",
+                "birth_date": "1905-12-24"
+            }
+        ],
+        "difficulty": "easy",
+        "category": "simple filtering"
+    },
+    {
+        "id": "aviation_035",
+        "question": "Which flights have a duration longer than 10 hours?",
+        "paraphrase": "What specific flights have a duration longer than 10 hours?",
+        "expected_sql": "SELECT flight_number, departure_time, arrival_time, ROUND((julianday(arrival_time)-julianday(departure_time))*24,2) AS duration_hrs FROM flights WHERE (julianday(arrival_time)-julianday(departure_time))*24 > 10 ORDER BY duration_hrs DESC;",
+        "expected_result": [
+            {
+                "flight_number": "SB-109",
+                "departure_time": "2024-02-15 11:00:00",
+                "arrival_time": "2024-02-16 02:00:00",
+                "duration_hrs": 15.0
+            },
+            {
+                "flight_number": "SB-101",
+                "departure_time": "2024-01-10 08:00:00",
+                "arrival_time": "2024-01-10 20:00:00",
+                "duration_hrs": 12.0
+            },
+            {
+                "flight_number": "PO-501",
+                "departure_time": "2024-03-01 09:00:00",
+                "arrival_time": "2024-03-01 21:00:00",
+                "duration_hrs": 12.0
+            }
+        ],
+        "difficulty": "medium",
+        "category": "date functions"
+    },
+    {
+        "id": "aviation_036",
+        "question": "How many waitlisted bookings currently exist per airline?",
+        "paraphrase": "Give the total number of waitlisted bookings currently exist per airline?",
+        "expected_sql": "SELECT al.airline_name, COUNT(*) AS waitlisted FROM bookings b JOIN flights f ON b.flight_id=f.flight_id JOIN airlines al ON f.airline_id=al.airline_id WHERE b.booking_status='Waitlisted' GROUP BY al.airline_id ORDER BY waitlisted DESC;",
+        "expected_result": [
+            {
+                "airline_name": "TransAtlantic Air",
+                "waitlisted": 1
+            }
+        ],
+        "difficulty": "medium",
+        "category": "GROUP BY"
+    },
+    {
+        "id": "aviation_037",
+        "question": "Which nationality of passengers books the most Business class seats?",
+        "paraphrase": "Find which nationality of passengers books the most Business class seats?",
+        "expected_sql": "SELECT p.nationality, COUNT(*) AS business_bookings FROM bookings b JOIN passengers p ON b.passenger_id=p.passenger_id WHERE b.seat_class='Business' GROUP BY p.nationality ORDER BY business_bookings DESC LIMIT 1;",
+        "expected_result": [
+            {
+                "nationality": "American",
+                "business_bookings": 2
+            }
+        ],
+        "difficulty": "medium",
+        "category": "GROUP BY"
+    },
+    {
+        "id": "aviation_038",
+        "question": "Find the second-highest fare ever paid for a single booking.",
+        "paraphrase": "Can you show me find the second-highest fare ever paid for a single booking.?",
+        "expected_sql": "SELECT fare_amount FROM bookings ORDER BY fare_amount DESC LIMIT 1 OFFSET 1;",
+        "expected_result": [
+            {
+                "fare_amount": 2500.0
+            }
+        ],
+        "difficulty": "medium",
+        "category": "LIMIT"
+    },
+    {
+        "id": "aviation_039",
+        "question": "How many distinct routes does each airline operate?",
+        "paraphrase": "Give the total number of distinct routes does each airline operate?",
+        "expected_sql": "SELECT al.airline_name, COUNT(DISTINCT f.origin_airport_id || '-' || f.destination_airport_id) AS distinct_routes FROM flights f JOIN airlines al ON f.airline_id=al.airline_id GROUP BY al.airline_id ORDER BY distinct_routes DESC;",
+        "expected_result": [
+            {
+                "airline_name": "SkyBridge Airlines",
+                "distinct_routes": 2
+            },
+            {
+                "airline_name": "Pacific Orient",
+                "distinct_routes": 1
+            },
+            {
+                "airline_name": "TransAtlantic Air",
+                "distinct_routes": 1
+            },
+            {
+                "airline_name": "Global Express",
+                "distinct_routes": 1
+            }
+        ],
+        "difficulty": "hard",
+        "category": "COUNT DISTINCT"
+    },
+    {
+        "id": "aviation_040",
+        "question": "Which flights are scheduled but originate from an airport with fewer than 20 total flights?",
+        "paraphrase": "What specific flights are scheduled but originate from an airport with fewer than 20 total flights?",
+        "expected_sql": "SELECT f.flight_number, f.origin_airport_id FROM flights f WHERE f.status='Scheduled' AND f.origin_airport_id IN (SELECT origin_airport_id FROM flights GROUP BY origin_airport_id HAVING COUNT(*) < 20);",
+        "expected_result": [
+            {
+                "flight_number": "PO-501",
+                "origin_airport_id": 40
+            }
+        ],
+        "difficulty": "hard",
+        "category": "correlated subqueries"
+    },
+    {
+        "id": "aviation_041",
+        "question": "What is the total number of seats (capacity) available across all aircraft owned by each airline?",
+        "paraphrase": "Can you show me what is the total number of seats (capacity) available across all aircraft owned by each airline??",
+        "expected_sql": "SELECT al.airline_name, SUM(ac.capacity) AS total_capacity FROM aircraft ac JOIN airlines al ON ac.airline_id=al.airline_id GROUP BY al.airline_id ORDER BY total_capacity DESC;",
+        "expected_result": [
+            {
+                "airline_name": "Global Express",
+                "total_capacity": 300
+            },
+            {
+                "airline_name": "SkyBridge Airlines",
+                "total_capacity": 250
+            },
+            {
+                "airline_name": "TransAtlantic Air",
+                "total_capacity": 180
+            },
+            {
+                "airline_name": "Pacific Orient",
+                "total_capacity": 160
+            }
+        ],
+        "difficulty": "medium",
+        "category": "aggregation"
+    },
+    {
+        "id": "aviation_042",
+        "question": "List bookings made on the same day the flight departed (same-day bookings).",
+        "paraphrase": "Can you show me list bookings made on the same day the flight departed (same-day bookings).?",
+        "expected_sql": "SELECT b.booking_id, b.booking_date, f.departure_time FROM bookings b JOIN flights f ON b.flight_id=f.flight_id WHERE date(b.booking_date) = date(f.departure_time) LIMIT 20;",
+        "expected_result": [],
+        "difficulty": "medium",
+        "category": "date functions"
+    },
+    {
+        "id": "aviation_043",
+        "question": "Which passengers have a booking with a NULL or missing seat class recorded?",
+        "paraphrase": "Identify which passengers have a booking with a NULL or missing seat class recorded?",
+        "expected_sql": "SELECT DISTINCT p.first_name, p.last_name FROM passengers p JOIN bookings b ON p.passenger_id=b.passenger_id WHERE b.seat_class IS NULL;",
+        "expected_result": [],
+        "difficulty": "easy",
+        "category": "NULL handling"
+    },
+    {
+        "id": "aviation_044",
+        "question": "What is the average passenger age at time of booking, grouped by seat class?",
+        "paraphrase": "Calculate the mean passenger age at time of booking, grouped by seat class?",
+        "expected_sql": "SELECT b.seat_class, ROUND(AVG((julianday(b.booking_date)-julianday(p.birth_date))/365.25),1) AS avg_age FROM bookings b JOIN passengers p ON b.passenger_id=p.passenger_id GROUP BY b.seat_class ORDER BY avg_age DESC;",
+        "expected_result": [
+            {
+                "seat_class": "Economy",
+                "avg_age": 126.9
+            },
+            {
+                "seat_class": "Business",
+                "avg_age": 126.5
+            },
+            {
+                "seat_class": "First",
+                "avg_age": 120.8
+            }
+        ],
+        "difficulty": "hard",
+        "category": "date functions"
+    },
+    {
+        "id": "aviation_045",
+        "question": "Which airline operates the newest fleet on average (by manufacture year)?",
+        "paraphrase": "What specific airline operates the newest fleet on average (by manufacture year)?",
+        "expected_sql": "SELECT al.airline_name, ROUND(AVG(ac.manufacture_year),1) AS avg_year FROM aircraft ac JOIN airlines al ON ac.airline_id=al.airline_id GROUP BY al.airline_id ORDER BY avg_year DESC LIMIT 1;",
+        "expected_result": [
+            {
+                "airline_name": "TransAtlantic Air",
+                "avg_year": 2021.0
+            }
+        ],
+        "difficulty": "medium",
+        "category": "aggregation"
+    },
+    {
+        "id": "aviation_046",
+        "question": "How many flights were delayed or cancelled in the last 90 days?",
+        "paraphrase": "Give the total number of flights were delayed or cancelled in the last 90 days?",
+        "expected_sql": "SELECT COUNT(*) FROM flights WHERE status IN ('Delayed','Cancelled') AND departure_time >= date('now','-90 day');",
+        "expected_result": [
+            {
+                "COUNT(*)": 0
+            }
+        ],
+        "difficulty": "medium",
+        "category": "date functions"
+    },
+    {
+        "id": "aviation_047",
+        "question": "Find the top 3 passengers by number of distinct destination cities visited.",
+        "paraphrase": "Can you show me find the top 3 passengers by number of distinct destination cities visited.?",
+        "expected_sql": "SELECT p.first_name, p.last_name, COUNT(DISTINCT ap.city) AS distinct_cities FROM bookings b JOIN passengers p ON b.passenger_id=p.passenger_id JOIN flights f ON b.flight_id=f.flight_id JOIN airports ap ON f.destination_airport_id=ap.airport_id WHERE b.booking_status='Confirmed' GROUP BY p.passenger_id ORDER BY distinct_cities DESC LIMIT 3;",
+        "expected_result": [
+            {
+                "first_name": "Howard",
+                "last_name": "Hughes",
+                "distinct_cities": 1
+            },
+            {
+                "first_name": "Antoine",
+                "last_name": "De Saint-Exupery",
+                "distinct_cities": 1
+            },
+            {
+                "first_name": "Charles",
+                "last_name": "Lindbergh",
+                "distinct_cities": 1
+            }
+        ],
+        "difficulty": "hard",
+        "category": "multiple joins"
+    },
+    {
+        "id": "aviation_048",
+        "question": "What is the total number of bookings in the system?",
+        "paraphrase": "Can you show me what is the total number of bookings in the system??",
+        "expected_sql": "SELECT COUNT(*) FROM bookings;",
+        "expected_result": [
+            {
+                "COUNT(*)": 6
+            }
+        ],
+        "difficulty": "easy",
+        "category": "simple filtering"
+    },
+    {
+        "id": "aviation_049",
+        "question": "Which airports serve as both an origin and destination for more than 50 flights combined?",
+        "paraphrase": "Find which airports serve as both an origin and destination for more than 50 flights combined?",
+        "expected_sql": "SELECT ap.airport_code, ap.city, (SELECT COUNT(*) FROM flights WHERE origin_airport_id=ap.airport_id) + (SELECT COUNT(*) FROM flights WHERE destination_airport_id=ap.airport_id) AS total_traffic FROM airports ap HAVING total_traffic > 50 ORDER BY total_traffic DESC;",
+        "expected_result": [],
+        "difficulty": "hard",
+        "category": "correlated subqueries"
+    }
+]

@@ -83,13 +83,38 @@ On upload, the system:
 4. Extracts the **DDL** and generates **vector embeddings** in ChromaDB (`BAAI/bge-small-en-v1.5` local fallback or Gemini)
 5. Tables are indexed for RAG-assisted SQL generation with curated example retrieval
 
+## Benchmark & Evaluation (Custom Dataset)
+
+QueryMind was benchmarked on a **custom dataset generated specifically for evaluating end-to-end Text-to-SQL performance** across unseen natural language query paraphrases, multi-table JOINs, and complex aggregations.
+
+### Key Benchmark Metrics
+
+| Metric Category | Metric Name | Score | Standard |
+| :--- | :--- | :--- | :--- |
+| **SQL Generation** | **Execution Accuracy** | **`93.88%`** | Realistic Unseen Evaluation |
+| **SQL Generation** | **Semantic Answer Accuracy** | **`93.88%`** | Exact Canonical Result Match |
+| **Retrieval** | **Top-1 Recall** | **`100.0%`** | Candidate Schema & Example Match |
+| **Retrieval** | **Top-5 Recall** | **`100.0%`** | Top-5 Retrieval Coverage |
+| **Retrieval** | **Mean Reciprocal Rank (MRR)** | **`1.0`** | Mean Reciprocal Rank Score |
+| **Latency** | **Average End-to-End Latency** | **`1.51s`** | Full Pipeline (Embedding + LLM + SQL) |
+| **Latency** | **P95 Latency** | **`1.87s`** | 95th Percentile Latency Profile |
+| **Security** | **SQL Injection Block Rate** | **`100.0%`** | Prohibited DDL/DML Rejection |
+
+To run the evaluation harness on the benchmark dataset:
+
+```bash
+python evaluation/evaluate.py
+```
+
+All evaluation artifacts, charts, and detailed JSON outputs are stored in [`evaluation/results/`](file:///C:/Users/dhruv/Desktop/PROJECTS/New%20folder%20%287%29/evaluation/results).
+
 ## How It Works & Resiliency Patterns
 
 1. **Upload** a CSV/XLSX/JSON file — data is bulk-loaded via PostgreSQL COPY protocol for speed.
 2. **Ask** a question in natural language (e.g. "Show top 5 sales in 2024").
 3. **RAG Retrieval** runs two searches in parallel against ChromaDB:
    - Retrieves the **table schema** (column names, types) for the target database
-   - Retrieves the **top-5 most similar question→SQL pairs** from a curated pool of ~2,000 real-world examples sourced from Spider and WikiSQL.
+   - Retrieves the **top-5 most similar question→SQL pairs** from a curated pool of ~2,000 real-world examples.
 4. **SQL Generation Pathways & The 78% Threshold**:
    - **RAG-Direct (Cosine Similarity ≥ 78%)**: When a user question matches an indexed SQL template with high confidence ($\ge 78\%$), direct Python template remapping is triggered. This executes in **<15ms with $0 API cost**, skipping LLM calls completely while eliminating model hallucination risks for common query patterns.
    - **LLM Adaptation (Cosine Similarity < 78%)**: When similarity is below 78%, structural template remapping is not safe. The schema and top retrieved examples are passed to **DeepSeek AI** (or Gemini) to reason about complex multi-clause query construction.

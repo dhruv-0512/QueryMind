@@ -1,0 +1,8 @@
+{
+    "total_failures": 3,
+    "failure_breakdown": {
+        "Column Hallucination": 1,
+        "JOIN Misalignment": 2,
+        "Execution Error": 0
+    }
+}
