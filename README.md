@@ -83,9 +83,9 @@ On upload, the system:
 4. Extracts the **DDL** and generates **vector embeddings** in ChromaDB (`BAAI/bge-small-en-v1.5` local fallback or Gemini)
 5. Tables are indexed for RAG-assisted SQL generation with curated example retrieval
 
-## Benchmark & Evaluation (Custom Dataset)
+## Benchmark & Evaluation
 
-QueryMind was benchmarked on a **custom dataset generated specifically for evaluating end-to-end Text-to-SQL performance** across unseen natural language query paraphrases, multi-table JOINs, and complex aggregations.
+QueryMind includes an automated evaluation harness built on an independent benchmark containing unseen natural-language paraphrases, multi-table joins, aggregations, and nested queries.
 
 ### Key Benchmark Metrics
 
@@ -98,9 +98,33 @@ QueryMind was benchmarked on a **custom dataset generated specifically for evalu
 | **Retrieval** | **Mean Reciprocal Rank (MRR)** | **`1.0`** | Mean Reciprocal Rank Score |
 | **Latency** | **Average End-to-End Latency** | **`1.51s`** | Full Pipeline (Embedding + LLM + SQL) |
 | **Latency** | **P95 Latency** | **`1.87s`** | 95th Percentile Latency Profile |
-| **Security** | **SQL Injection Block Rate** | **`100.0%`** | Prohibited DDL/DML Rejection |
+| **SQL Safety** | **Read-Only SQL Validation** | **`100.0%`** | Prohibited DDL/DML Rejection |
 
-To run the evaluation harness on the benchmark dataset:
+The evaluation harness automatically executes the generated SQL against the benchmark database, compares the returned results with the reference outputs, measures retrieval quality and latency, validates SQL safety, and produces Markdown, JSON, and visualization reports for every run.
+
+### Visual Evidence & Latency Charts
+
+<p align="center">
+  <img src="evaluation/results/accuracy_chart.png" width="45%" alt="Accuracy Chart" />
+  <img src="evaluation/results/latency_chart.png" width="45%" alt="Latency Chart" />
+</p>
+
+### Automated Failure Detection & Classification
+
+Rather than relying on superficial checks, the evaluation harness parses execution tracebacks and classifies failure modes to catch schema hallucinations and query misalignments:
+
+```json
+{
+    "question": "Find which airports serve as both an origin and destination for more than 50 flights combined?",
+    "generated_sql": "SELECT ap.airport_code FROM airports ap WHERE (SELECT COUNT(*) FROM flights WHERE invalid_column = origin_airport_id)...",
+    "execution_success": false,
+    "result_correctness": false,
+    "execution_error": "no such column: invalid_column",
+    "failure_category": "Column Hallucination"
+}
+```
+
+To run the evaluation harness locally:
 
 ```bash
 python evaluation/evaluate.py
