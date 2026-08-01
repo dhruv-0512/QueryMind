@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useMemo, Suspense, lazy } from 'react
 import { Database, History, Shield, LogOut, Terminal, User, Menu, X } from 'lucide-react';
 import { clearTokens, getTokens } from './services/api';
 
+import { DemoBanner } from './components/DemoBanner';
+
 const Login         = lazy(() => import('./pages/Login').then(m => ({ default: m.Login })));
 const Register      = lazy(() => import('./pages/Register').then(m => ({ default: m.Register })));
 const Dashboard     = lazy(() => import('./pages/Dashboard').then(m => ({ default: m.Dashboard })));
@@ -438,6 +440,7 @@ const App = () => {
 
           <div style={{ maxWidth: 1100, margin: '0 auto', width: '100%', padding: '32px 36px', flex: 1 }}
                className="px-4 py-8 md:px-9 md:py-8">
+            <DemoBanner />
             <Suspense fallback={null}>
               {currentPage === 'dashboard'  && <Dashboard userRole={userRole} onSelectDatabase={handleSelectDatabase} />}
               {currentPage === 'workspace'  && <QueryWorkspace selectedDbId={selectedDbId} selectedDbName={selectedDbName} />}
