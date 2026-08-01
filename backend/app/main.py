@@ -23,6 +23,16 @@ async def lifespan(app: FastAPI):
         await loop.run_in_executor(None, _get_local_model)
         logger.info("Embedding model preloaded successfully")
 
+    # Ensure database schema/tables exist on startup (defense in depth)
+    try:
+        from app.database import engine, Base
+        import app.models  # Ensure all ORM models are registered
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        logger.info("Database schema initialized successfully")
+    except Exception as e:
+        logger.warning(f"Database schema auto-creation check note: {e}")
+
     yield
     # App Shutdown
     await kafka_service.stop()
