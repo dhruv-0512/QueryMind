@@ -168,21 +168,7 @@ export const Register = ({ onNavigateToLogin }) => {
             </div>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-            <label style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-secondary)' }}>
-              Role
-            </label>
-            <select
-              value={role}
-              onChange={(e) => setRole(e.target.value)}
-              className="input-field"
-              style={{ appearance: 'none', cursor: 'pointer' }}
-              disabled={isLoading}
-            >
-              <option value="analyst">Analyst — Upload &amp; query databases</option>
-              <option value="admin">Admin — Full system access</option>
-            </select>
-          </div>
+
 
           <button
             type="submit"
