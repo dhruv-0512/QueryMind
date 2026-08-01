@@ -29,11 +29,19 @@ PG_TYPE_MAP = {
 
 
 def safe_identifier(name: Any) -> str:
-    """Sanitize a string or value into a safe PostgreSQL identifier."""
+    """Sanitize a string or value into a safe PostgreSQL identifier.
+    
+    Rules:
+    - Replace any character that is not alphanumeric or underscore with '_'.
+    - If the result starts with a digit, prefix with 'u_' so the identifier
+      remains valid (PostgreSQL identifiers cannot start with a digit).
+    - Truncate to 63 characters (PostgreSQL limit).
+    """
     name_str = str(name) if name is not None else "unknown"
-    cleaned = re.sub(r"[^a-zA-Z0-9_]", "_", name_str)
-    cleaned = re.sub(r"^[^a-zA-Z]+", "", cleaned)
-    return cleaned.lower()[:63] if cleaned else "unknown"
+    cleaned = re.sub(r"[^a-zA-Z0-9_]", "_", name_str).lower()
+    if cleaned and cleaned[0].isdigit():
+        cleaned = "u_" + cleaned
+    return cleaned[:63] if cleaned else "unknown"
 
 
 def pandas_dtype_to_pg(dtype: str) -> str:
@@ -141,9 +149,16 @@ async def discover_live_schema(session: AsyncSession, schema_name: str) -> Dict[
     Discover all tables, columns, data types, primary keys, and foreign keys in schema_name from information_schema.
     Returns a complete, structured dictionary and formatted string representation for RAG and LLM grounding.
     """
-    safe_schema = safe_identifier(schema_name)
+    # schema_name stored in DatabaseConnection is already sanitized at upload time.
+    # Do NOT re-sanitize here — pass it through as-is to avoid double-transformation.
+    safe_schema = schema_name.strip() if schema_name else ""
+
+    logger.info(f"[SCHEMA DISCOVERY] Querying information_schema for schema='{safe_schema}'")
 
     # 1. Fetch tables
+    discovery_sql = "SELECT table_name FROM information_schema.tables WHERE table_schema = :schema AND table_type = 'BASE TABLE' ORDER BY table_name;"
+    logger.info(f"[SCHEMA DISCOVERY] SQL: {discovery_sql} | params: schema={safe_schema!r}")
+
     tbl_result = await session.execute(
         text("""
             SELECT table_name
@@ -154,6 +169,51 @@ async def discover_live_schema(session: AsyncSession, schema_name: str) -> Dict[
         {"schema": safe_schema}
     )
     tables = [r[0] for r in tbl_result.fetchall()]
+
+    logger.info(f"[SCHEMA DISCOVERY] schema='{safe_schema}' → discovered tables: {tables}")
+    if not tables:
+        logger.warning(
+            f"[SCHEMA DISCOVERY] No tables found for schema='{safe_schema}'. "
+            f"Attempting fallback: searching for any 'user_*' schema containing this database's suffix..."
+        )
+        # Fallback: the old safe_identifier stripped leading digits from UUIDs, producing
+        # a different schema name than was stored in DatabaseConnection.
+        # Search for any matching user schema by suffix to allow self-healing.
+        try:
+            suffix = safe_schema.split("_", 2)[-1] if "_" in safe_schema else safe_schema
+            fallback_result = await session.execute(
+                text("""
+                    SELECT schema_name
+                    FROM information_schema.schemata
+                    WHERE schema_name LIKE 'user_%'
+                      AND schema_name LIKE :suffix_pattern
+                    ORDER BY schema_name;
+                """),
+                {"suffix_pattern": f"%{suffix}%"}
+            )
+            fallback_schemas = [r[0] for r in fallback_result.fetchall()]
+            logger.info(f"[SCHEMA DISCOVERY] Fallback candidate schemas: {fallback_schemas}")
+
+            if fallback_schemas:
+                # Use the first (and usually only) matching schema
+                resolved_schema = fallback_schemas[0]
+                logger.info(f"[SCHEMA DISCOVERY] Using fallback schema: '{resolved_schema}' instead of '{safe_schema}'")
+                safe_schema = resolved_schema
+
+                # Re-fetch tables with the resolved schema name
+                tbl_result2 = await session.execute(
+                    text("""
+                        SELECT table_name
+                        FROM information_schema.tables
+                        WHERE table_schema = :schema AND table_type = 'BASE TABLE'
+                        ORDER BY table_name;
+                    """),
+                    {"schema": safe_schema}
+                )
+                tables = [r[0] for r in tbl_result2.fetchall()]
+                logger.info(f"[SCHEMA DISCOVERY] After fallback, tables: {tables}")
+        except Exception as fb_err:
+            logger.error(f"[SCHEMA DISCOVERY] Fallback schema search failed: {fb_err}")
 
     # 2. Fetch columns
     col_result = await session.execute(

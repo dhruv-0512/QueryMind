@@ -118,6 +118,16 @@ async def execute_nl_query(
     live_schema_text = live_schema_info.get("formatted_schema", "")
     full_schema_context = live_schema_text if live_schema_text else chroma_schema_context
 
+    # Log schema discovery diagnostics
+    discovered_tables = list(live_schema_info.get("tables", {}).keys())
+    logger.info(
+        f"[SCHEMA DISCOVERY RESULT]\n"
+        f"  Current Schema : {schema_name}\n"
+        f"  Database ID    : {request.db_id}\n"
+        f"  User ID        : {user_id}\n"
+        f"  Tables         : {discovered_tables if discovered_tables else '(none found)'}"
+    )
+
     # Pipeline Instrumentation Logging - Steps 1-5
     logger.info(f"=== PIPELINE INSTRUMENTATION LOGS ===")
     logger.info(f"1. RETRIEVED SCHEMA DOCUMENTS for schema '{schema_name}' (DB {request.db_id}):\n{full_schema_context}")
@@ -219,13 +229,26 @@ async def execute_nl_query(
 
         # Low confidence match or recovery failed: Return user guidance message
         if not is_valid and not best_match:
-            candidates_formatted = "\n".join(candidates) if candidates else "None"
-            user_guidance = (
-                f"I couldn't find a {match_kind} named '{invalid_id or 'requested'}'.\n\n"
-                f"Available {match_kind}s are:\n\n"
-                f"{candidates_formatted}\n\n"
-                f"Did you mean one of these?"
-            )
+            # Handle the case where schema was empty (tables = None) vs identifier not found
+            discovered_tables = list(live_schema_info.get("tables", {}).keys())
+            if not invalid_id:
+                # validate_sql_query returned None for invalid_id — schema was empty
+                table_list = "\n".join(f"  - {t}" for t in discovered_tables) if discovered_tables else "  (no tables found in schema)"
+                user_guidance = (
+                    f"Query failed: the uploaded database schema could not be loaded.\n\n"
+                    f"Current schema: {schema_name}\n\n"
+                    f"Available tables:\n{table_list}\n\n"
+                    f"If this is unexpected, try re-uploading your database file."
+                )
+            else:
+                # Identifier was extracted correctly but had no match
+                candidates_formatted = "\n".join(f"  - {c}" for c in candidates) if candidates else "  (no tables found in schema)"
+                user_guidance = (
+                    f"I couldn't find a {match_kind} named '{invalid_id}'.\n\n"
+                    f"Available {match_kind}s are:\n\n"
+                    f"{candidates_formatted}\n\n"
+                    f"Did you mean one of these?"
+                )
             
             await kafka_service.publish_event(
                 topic="query-events",
