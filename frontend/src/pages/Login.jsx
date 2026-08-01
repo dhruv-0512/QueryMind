@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { api, setTokens } from '../services/api';
 import { Mail, Lock, AlertCircle, Terminal } from 'lucide-react';
+import { DemoBanner } from '../components/DemoBanner';
 
 /*
   Why: Old login had:
@@ -52,22 +53,24 @@ export const Login = ({ onLoginSuccess, onNavigateToRegister }) => {
       style={{
         minHeight: '100vh',
         display: 'flex',
+        flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
         background: 'var(--bg-base)',
         padding: '24px 16px',
       }}
     >
-      <div
-        style={{
-          width: '100%',
-          maxWidth: 380,
-          background: 'var(--bg-surface)',
-          border: '1px solid var(--border-default)',
-          borderRadius: 10,
-          padding: '36px 32px 32px',
-        }}
-      >
+      <div style={{ width: '100%', maxWidth: 440 }}>
+        <DemoBanner />
+        <div
+          style={{
+            width: '100%',
+            background: 'var(--bg-surface)',
+            border: '1px solid var(--border-default)',
+            borderRadius: 10,
+            padding: '36px 32px 32px',
+          }}
+        >
         {/* Header */}
         <div style={{ marginBottom: 28 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 14 }}>
@@ -223,6 +226,7 @@ export const Login = ({ onLoginSuccess, onNavigateToRegister }) => {
             Register
           </button>
         </p>
+      </div>
       </div>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
