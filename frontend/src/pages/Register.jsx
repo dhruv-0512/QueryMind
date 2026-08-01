@@ -66,7 +66,7 @@ export const Register = ({ onNavigateToLogin }) => {
       }}
     >
       <div style={{ width: '100%', maxWidth: 440 }}>
-        <DemoBanner />
+        <DemoBanner alwaysShow={true} />
         <div
           style={{
             width: '100%',

@@ -18,6 +18,7 @@ export const clearTokens = () => {
   localStorage.removeItem('refresh_token');
   localStorage.removeItem('user_role');
   localStorage.removeItem('user_email');
+  localStorage.removeItem('querymind_demo_banner_dismissed');
 };
 
 let isRefreshing = false;

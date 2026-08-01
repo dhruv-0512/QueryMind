@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { Info, X, Rocket } from 'lucide-react';
 
-export const DemoBanner = () => {
+export const DemoBanner = ({ alwaysShow = false }) => {
   const [isDismissed, setIsDismissed] = useState(() => {
+    if (alwaysShow) return false;
     try {
       return localStorage.getItem('querymind_demo_banner_dismissed') === 'true';
     } catch {
@@ -17,7 +18,7 @@ export const DemoBanner = () => {
       window.location.hostname !== 'localhost' &&
       window.location.hostname !== '127.0.0.1');
 
-  if (!isProd || isDismissed) {
+  if (!isProd || (!alwaysShow && isDismissed)) {
     return null;
   }
 
