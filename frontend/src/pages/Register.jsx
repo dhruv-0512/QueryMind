@@ -6,7 +6,7 @@ import { DemoBanner } from '../components/DemoBanner';
 export const Register = ({ onNavigateToLogin }) => {
   const [email,    setEmail]    = useState('');
   const [password, setPassword] = useState('');
-  const [role,     setRole]     = useState('viewer');
+  const [role,     setRole]     = useState('analyst');
   const [statusMsg, setStatusMsg] = useState({ type: '', text: '' });
   const [isLoading, setIsLoading] = useState(false);
 
@@ -14,15 +14,21 @@ export const Register = ({ onNavigateToLogin }) => {
     e.preventDefault();
     setStatusMsg({ type: '', text: '' });
 
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email.trim())) {
+      setStatusMsg({ type: 'error', text: 'Please enter a valid email address (e.g. user@example.com).' });
+      return;
+    }
+
     if (password.length < 8) {
-      setStatusMsg({ type: 'error', text: 'Password must be at least 8 characters.' });
+      setStatusMsg({ type: 'error', text: 'Password must be at least 8 characters long.' });
       return;
     }
 
     setIsLoading(true);
 
     try {
-      await api.post('/auth/register', { email, password, role });
+      await api.post('/auth/register', { email: email.trim(), password, role });
       setStatusMsg({
         type: 'success',
         text: 'Account created. Redirecting to sign in…',
@@ -173,7 +179,6 @@ export const Register = ({ onNavigateToLogin }) => {
               style={{ appearance: 'none', cursor: 'pointer' }}
               disabled={isLoading}
             >
-              <option value="viewer">Viewer — Read-only access</option>
               <option value="analyst">Analyst — Upload &amp; query databases</option>
               <option value="admin">Admin — Full system access</option>
             </select>

@@ -6,7 +6,7 @@ from typing import Literal
 class UserRegister(BaseModel):
     email: EmailStr
     password: str = Field(..., min_length=8, description="Password must be at least 8 characters long")
-    role: Literal["admin", "analyst", "viewer"] = "viewer"
+    role: Literal["admin", "analyst", "viewer"] = "analyst"
 
 class UserLogin(BaseModel):
     email: EmailStr

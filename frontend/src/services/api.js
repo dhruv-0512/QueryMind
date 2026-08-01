@@ -110,7 +110,16 @@ async function apiRequest(path, options = {}) {
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));
-      throw new Error(errorData.detail || 'Request failed');
+      let detailMsg = 'Request failed';
+      if (Array.isArray(errorData.detail)) {
+        detailMsg = errorData.detail.map(d => {
+          const field = d.loc && d.loc.length > 0 ? d.loc[d.loc.length - 1] : '';
+          return field ? `${field}: ${d.msg}` : d.msg;
+        }).join(' | ');
+      } else if (typeof errorData.detail === 'string') {
+        detailMsg = errorData.detail;
+      }
+      throw new Error(detailMsg);
     }
 
     if (response.status === 204) {
