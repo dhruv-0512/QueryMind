@@ -33,6 +33,31 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Database schema auto-creation check note: {e}")
 
+    # Migrate legacy DatabaseConnection rows whose schema_name exceeds 63 chars.
+    # PostgreSQL silently truncated such names at CREATE SCHEMA time, so the actual
+    # schema in PG is the first 63 chars.  Update the stored value to match.
+    try:
+        from app.database import SessionLocal
+        from sqlalchemy import text as _text
+        async with SessionLocal() as _sess:
+            result = await _sess.execute(
+                _text("SELECT id, schema_name FROM database_connections WHERE LENGTH(schema_name) > 63")
+            )
+            rows = result.fetchall()
+            if rows:
+                logger.info(f"[STARTUP MIGRATION] Found {len(rows)} DatabaseConnection row(s) with schema_name > 63 chars. Truncating...")
+                for row_id, old_name in rows:
+                    new_name = old_name[:63]
+                    await _sess.execute(
+                        _text("UPDATE database_connections SET schema_name = :new WHERE id = :id"),
+                        {"new": new_name, "id": row_id}
+                    )
+                    logger.info(f"[STARTUP MIGRATION] id={row_id}: '{old_name}' -> '{new_name}'")
+                await _sess.commit()
+                logger.info("[STARTUP MIGRATION] Schema name migration complete.")
+    except Exception as mig_err:
+        logger.warning(f"[STARTUP MIGRATION] Could not run schema_name migration: {mig_err}")
+
     yield
     # App Shutdown
     await kafka_service.stop()

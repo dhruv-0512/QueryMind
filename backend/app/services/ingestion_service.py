@@ -161,9 +161,10 @@ async def discover_live_schema(session: AsyncSession, schema_name: str) -> Dict[
     Discover all tables, columns, data types, primary keys, and foreign keys in schema_name from information_schema.
     Returns a complete, structured dictionary and formatted string representation for RAG and LLM grounding.
     """
-    # schema_name stored in DatabaseConnection is already sanitized at upload time.
-    # Do NOT re-sanitize here — pass it through as-is to avoid double-transformation.
-    safe_schema = schema_name.strip() if schema_name else ""
+    # schema_name is stored in DatabaseConnection at upload time.
+    # PostgreSQL silently truncates unquoted identifiers to 63 chars,
+    # so we must match that truncation here when using it as a bound parameter.
+    safe_schema = schema_name.strip()[:63] if schema_name else ""
 
     logger.info(f"[SCHEMA DISCOVERY] Querying information_schema for schema='{safe_schema}'")
 
@@ -394,10 +395,8 @@ async def read_file_to_dataframe(file_bytes: bytes, filename: str) -> pd.DataFra
 
 
 async def get_temp_schema_name(user_id: str, db_id: str) -> str:
-    """Generate the temp schema name: user_{user_id}_{db_id}"""
-    safe_user = safe_identifier(user_id)
-    safe_db = safe_identifier(db_id)
-    return f"user_{safe_user}_{safe_db}"
+    """Generate the deterministic temp schema name for a user/db pair."""
+    return make_schema_name(user_id, db_id)
 
 
 async def execute_pg_query(

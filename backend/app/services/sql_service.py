@@ -443,7 +443,10 @@ Return JSON format:
         timeout: float = 30.0,
     ) -> Tuple[List[Dict[str, Any]], float]:
         start = time.time()
-        await session.execute(text(f"SET LOCAL search_path TO {schema_name}, public"))
+        # PostgreSQL silently truncates unquoted identifiers to 63 chars.
+        # Truncate here so SET search_path matches the actual stored schema name.
+        safe_schema = schema_name.strip()[:63] if schema_name else "public"
+        await session.execute(text(f"SET LOCAL search_path TO {safe_schema}, public"))
 
         try:
             result = await asyncio.wait_for(
