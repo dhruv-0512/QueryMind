@@ -30,18 +30,30 @@ PG_TYPE_MAP = {
 
 def safe_identifier(name: Any) -> str:
     """Sanitize a string or value into a safe PostgreSQL identifier.
-    
-    Rules:
-    - Replace any character that is not alphanumeric or underscore with '_'.
-    - If the result starts with a digit, prefix with 'u_' so the identifier
-      remains valid (PostgreSQL identifiers cannot start with a digit).
-    - Truncate to 63 characters (PostgreSQL limit).
+
+    - Replaces any non-alphanumeric/underscore character with '_'.
+    - Strips any leading digits (column/table names must start with a letter or '_').
+    - Truncates to 63 characters (PostgreSQL identifier limit).
+
+    NOTE: Do NOT use this for schema names built from two UUIDs — use
+    make_schema_name() instead to stay within the 63-char limit.
     """
     name_str = str(name) if name is not None else "unknown"
     cleaned = re.sub(r"[^a-zA-Z0-9_]", "_", name_str).lower()
-    if cleaned and cleaned[0].isdigit():
-        cleaned = "u_" + cleaned
+    cleaned = re.sub(r"^[_0-9]+", "", cleaned)  # strip leading underscores/digits
     return cleaned[:63] if cleaned else "unknown"
+
+
+def make_schema_name(user_id: Any, db_id: Any) -> str:
+    """Build a deterministic, PostgreSQL-safe schema name from two UUIDs.
+
+    Uses the first 16 hex characters (no hyphens) of each UUID:
+      user_<16hex>_<16hex>
+    Total length = 5 + 16 + 1 + 16 = 38 characters — well within the 63-char limit.
+    """
+    uid_hex = re.sub(r"[^a-f0-9]", "", str(user_id).lower())[:16]
+    dbid_hex = re.sub(r"[^a-f0-9]", "", str(db_id).lower())[:16]
+    return f"user_{uid_hex}_{dbid_hex}"
 
 
 def pandas_dtype_to_pg(dtype: str) -> str:

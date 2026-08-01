@@ -17,6 +17,7 @@ from app.services.kafka_service import kafka_service
 from app.services.cache_service import cache_service
 from app.services.ingestion_service import (
     safe_identifier,
+    make_schema_name,
     read_file_to_dataframe,
     create_temp_schema,
     load_dataframe_to_pg,
@@ -66,7 +67,7 @@ async def upload_database(
     if df.empty:
         raise HTTPException(status_code=400, detail="File has no data rows.")
 
-    schema_name = f"user_{safe_identifier(str(current_user.id))}_{safe_identifier(str(db_id))}"
+    schema_name = make_schema_name(current_user.id, db_id)
     table_name = safe_identifier(filename.rsplit(".", 1)[0])
 
     try:
