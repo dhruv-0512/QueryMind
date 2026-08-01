@@ -20,7 +20,7 @@ from app.services.sql_example_retrieval_service import sql_example_retrieval_ser
 from app.services.cache_service import cache_service
 from app.services.kafka_service import kafka_service
 from app.services.ingestion_service import discover_live_schema
-from app.utils.sql_validator import validate_sql_query
+from app.utils.sql_validator import validate_sql_query, suggest_schema_matches
 from app.middleware.rate_limiter import rate_limiter
 from app.utils.circuit_breaker import CircuitOpenError
 
@@ -175,65 +175,79 @@ async def execute_nl_query(
 
     logger.info(f"5. GENERATED SQL:\n{sql}")
 
-    # Step 4: SQL Validation against Discovered Live Schema
-    is_valid, validation_error = validate_sql_query(sql, schema_name, schema_info=live_schema_info)
-    logger.info(f"[VALIDATION RESULT] is_valid={is_valid}, error='{validation_error}'")
+    # Step 4: SQL Validation & Schema-Aware Recovery
+    is_valid, validation_error, invalid_id = validate_sql_query(sql, schema_name, schema_info=live_schema_info)
+    logger.info(f"[VALIDATION RESULT] is_valid={is_valid}, error='{validation_error}', invalid_identifier='{invalid_id}'")
 
-    # Step 5: Retry once with feedback if validation fails
     if not is_valid:
-        logger.warning(f"[RETRY TRIGGERED] SQL validation failed: '{validation_error}'. Rediscovering schema and retrying once...")
-        try:
-            # Rediscover schema from information_schema
-            live_schema_info = await discover_live_schema(db_session, schema_name)
-            full_schema_context = live_schema_info.get("formatted_schema", full_schema_context)
-            
-            gen_result_retry = await sql_service.generate_sql(
-                full_schema_context,
-                question,
-                retrieved_examples,
-                validation_feedback=validation_error
+        best_match, match_kind, candidates = suggest_schema_matches(invalid_id, live_schema_info, cutoff=0.55)
+        
+        # High confidence match found: Attempt automatic recovery
+        if best_match:
+            logger.info(f"[SCHEMA RECOVERY] High confidence match found: '{invalid_id}' -> '{best_match}'. Retrying generation...")
+            feedback_msg = (
+                f"Invalid {match_kind} '{invalid_id}' detected. "
+                f"The correct {match_kind} in the uploaded database schema is '{best_match}'. "
+                f"Please regenerate valid SQL using '{best_match}' and only identifiers present in the schema."
+            )
+            try:
+                live_schema_info = await discover_live_schema(db_session, schema_name)
+                full_schema_context = live_schema_info.get("formatted_schema", full_schema_context)
+                
+                gen_result_retry = await sql_service.generate_sql(
+                    full_schema_context,
+                    question,
+                    retrieved_examples,
+                    validation_feedback=feedback_msg
+                )
+                
+                sql_retry = gen_result_retry.get("sql", "")
+                logger.info(f"[REGENERATED SQL] {sql_retry}")
+
+                is_valid_retry, val_err_retry, invalid_id_retry = validate_sql_query(sql_retry, schema_name, schema_info=live_schema_info)
+                logger.info(f"[RE-VALIDATION RESULT] is_valid={is_valid_retry}, error='{val_err_retry}'")
+
+                if is_valid_retry:
+                    sql = sql_retry
+                    explanation = gen_result_retry.get("explanation", explanation)
+                    confidence = gen_result_retry.get("confidence", confidence)
+                else:
+                    best_match = None  # Fall through to guidance message if retry still failed
+            except Exception as retry_err:
+                logger.error(f"Recovery attempt error: {retry_err}")
+                best_match = None
+
+        # Low confidence match or recovery failed: Return user guidance message
+        if not is_valid and not best_match:
+            candidates_formatted = "\n".join(candidates) if candidates else "None"
+            user_guidance = (
+                f"I couldn't find a {match_kind} named '{invalid_id or 'requested'}'.\n\n"
+                f"Available {match_kind}s are:\n\n"
+                f"{candidates_formatted}\n\n"
+                f"Did you mean one of these?"
             )
             
-            if gen_result_retry.get("error") and not gen_result_retry.get("sql"):
-                raise HTTPException(status_code=400, detail="The uploaded database does not contain the requested field.")
+            await kafka_service.publish_event(
+                topic="query-events",
+                event_type="QueryRejected",
+                user_id=str(user_id),
+                payload={"db_id": str(request.db_id), "question": question, "sql": sql, "reason": user_guidance}
+            )
 
-            sql_retry = gen_result_retry.get("sql", "")
-            logger.info(f"[REGENERATED SQL] {sql_retry}")
+            history = QueryHistory(
+                user_id=user_id,
+                db_id=request.db_id,
+                question=question,
+                generated_sql=sql,
+                explanation=explanation,
+                confidence=confidence,
+                status="rejected",
+                error_message=user_guidance
+            )
+            db_session.add(history)
+            await db_session.commit()
 
-            is_valid_retry, validation_error_retry = validate_sql_query(sql_retry, schema_name, schema_info=live_schema_info)
-            logger.info(f"[RE-VALIDATION RESULT] is_valid={is_valid_retry}, error='{validation_error_retry}'")
-
-            if is_valid_retry:
-                sql = sql_retry
-                explanation = gen_result_retry.get("explanation", explanation)
-                confidence = gen_result_retry.get("confidence", confidence)
-            else:
-                await kafka_service.publish_event(
-                    topic="query-events",
-                    event_type="QueryRejected",
-                    user_id=str(user_id),
-                    payload={"db_id": str(request.db_id), "question": question, "sql": sql_retry, "reason": validation_error_retry}
-                )
-
-                history = QueryHistory(
-                    user_id=user_id,
-                    db_id=request.db_id,
-                    question=question,
-                    generated_sql=sql_retry,
-                    explanation=explanation,
-                    confidence=confidence,
-                    status="rejected",
-                    error_message=validation_error_retry
-                )
-                db_session.add(history)
-                await db_session.commit()
-
-                raise HTTPException(status_code=400, detail="The uploaded database does not contain the requested field.")
-        except HTTPException:
-            raise
-        except Exception as retry_err:
-            logger.error(f"Retry attempt error: {retry_err}")
-            raise HTTPException(status_code=400, detail="The uploaded database does not contain the requested field.")
+            raise HTTPException(status_code=400, detail=user_guidance)
 
     # Step 6: Execute against PostgreSQL
     try:

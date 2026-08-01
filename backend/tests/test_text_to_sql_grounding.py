@@ -41,7 +41,7 @@ async def test_users_table_no_first_name_hallucination():
     assert "email" in generated_sql.lower(), f"Expected email in: {generated_sql}"
 
     # 3. Validate against schema_info
-    is_valid, err = validate_sql_query(generated_sql, schema_info=schema_info)
+    is_valid, err, _ = validate_sql_query(generated_sql, schema_info=schema_info)
     assert is_valid, f"Validation failed: {err}"
 
 @pytest.mark.asyncio
@@ -77,7 +77,7 @@ async def test_products_table_grounding():
     assert "price" in generated_sql.lower(), f"Expected price column in: {generated_sql}"
     assert "1000" in generated_sql, f"Expected 1000 threshold in: {generated_sql}"
 
-    is_valid, err = validate_sql_query(generated_sql, schema_info=schema_info)
+    is_valid, err, _ = validate_sql_query(generated_sql, schema_info=schema_info)
     assert is_valid, f"Validation failed: {err}"
 
 @pytest.mark.asyncio
@@ -114,7 +114,7 @@ async def test_employees_table_grounding():
     assert "department" in generated_sql.lower(), f"Expected department column in: {generated_sql}"
     assert "sales" in generated_sql.lower(), f"Expected Sales in: {generated_sql}"
 
-    is_valid, err = validate_sql_query(generated_sql, schema_info=schema_info)
+    is_valid, err, _ = validate_sql_query(generated_sql, schema_info=schema_info)
     assert is_valid, f"Validation failed: {err}"
 
 def test_validator_detects_hallucinated_column():
@@ -126,9 +126,9 @@ def test_validator_detects_hallucinated_column():
         }
     }
     bad_sql = "SELECT employee_name, gpa FROM employees;"
-    is_valid, err = validate_sql_query(bad_sql, schema_info=schema_info)
+    is_valid, err, inv_id = validate_sql_query(bad_sql, schema_info=schema_info)
     assert not is_valid
-    assert "gpa" in err.lower()
+    assert inv_id == "gpa"
 
 def test_validator_detects_nonexistent_table_entries():
     schema_info = {
@@ -139,6 +139,26 @@ def test_validator_detects_nonexistent_table_entries():
         }
     }
     bad_sql = "SELECT COUNT(*) FROM entries;"
-    is_valid, err = validate_sql_query(bad_sql, schema_info=schema_info)
+    is_valid, err, inv_id = validate_sql_query(bad_sql, schema_info=schema_info)
     assert not is_valid
-    assert "entries" in err.lower()
+    assert inv_id == "entries"
+
+def test_suggest_schema_matches():
+    from app.utils.sql_validator import suggest_schema_matches
+    schema_info = {
+        "tables": {
+            "orders": {"columns": ["id", "order_date", "total_price"]},
+            "customers": {"columns": ["id", "customer_name", "email"]},
+            "products": {"columns": ["id", "product_name", "price"]}
+        }
+    }
+    
+    # 1. Close match on table name ("order" -> "orders")
+    best, kind, candidates = suggest_schema_matches("order", schema_info)
+    assert best == "orders"
+    assert kind == "table"
+
+    # 2. No close match on table name ("entries" vs ["orders", "customers", "products"])
+    best_low, kind_low, candidates_low = suggest_schema_matches("entries", schema_info)
+    assert best_low is None
+    assert "orders" in candidates_low and "customers" in candidates_low and "products" in candidates_low
