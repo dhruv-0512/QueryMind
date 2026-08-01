@@ -27,7 +27,7 @@ async def consume_events() -> None:
     Subscribes to all event topics and records events in PostgreSQL audit_logs.
     """
     logger.info("Initializing Audit Consumer database connection...")
-    engine = create_async_engine(settings.DATABASE_URL, echo=False)
+    engine = create_async_engine(settings.DATABASE_URL, connect_args=settings.DB_CONNECT_ARGS, echo=False)
     SessionLocal = async_sessionmaker(bind=engine, expire_on_commit=False)
 
     topics = ["auth-events", "query-events", "schema-events", "audit-events"]

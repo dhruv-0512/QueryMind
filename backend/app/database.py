@@ -5,6 +5,7 @@ from app.config import settings
 # Create SQLAlchemy Async Engine
 engine = create_async_engine(
     settings.DATABASE_URL,
+    connect_args=settings.DB_CONNECT_ARGS,
     echo=settings.LOG_LEVEL.upper() == "DEBUG",
     pool_size=10,
     max_overflow=20

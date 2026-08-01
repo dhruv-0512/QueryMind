@@ -9,7 +9,7 @@ services:
     startCommand: alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: DATABASE_URL
-        value: postgresql+asyncpg://neondb_owner:npg_KYFsX3jR8oBd@ep-plain-shadow-ayjgzgk0.c-5.us-east-2.aws.neon.tech/neondb?sslmode=require
+        value: postgresql+asyncpg://neondb_owner:npg_KYFsX3jR8oBd@ep-plain-shadow-ayjgzgk0.c-5.us-east-2.aws.neon.tech/neondb
       - key: REDIS_URL
         value: rediss://default:gQAAAAAAARsOAAIgcDI4NDY2NTc2MmZkYTk0NWRlOTc4MGNiYjU0NzhiZDllMA@wanted-dinosaur-72462.upstash.io:6379
       - key: KAFKA_BOOTSTRAP_SERVERS

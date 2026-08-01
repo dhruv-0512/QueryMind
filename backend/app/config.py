@@ -1,19 +1,58 @@
-from pydantic import field_validator
+from typing import Dict, Any
+from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+from pydantic import field_validator, PrivateAttr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     # Database Configurations
     DATABASE_URL: str
+    _db_connect_args: Dict[str, Any] = PrivateAttr(default_factory=dict)
 
     @field_validator("DATABASE_URL", mode="before")
     @classmethod
     def assemble_db_connection(cls, v: str) -> str:
         if isinstance(v, str):
+            # Convert dialect prefix to postgresql+asyncpg
             if v.startswith("postgres://"):
                 v = v.replace("postgres://", "postgresql+asyncpg://", 1)
             elif v.startswith("postgresql://") and not v.startswith("postgresql+asyncpg://"):
                 v = v.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+            # Strip query parameters that asyncpg rejects (e.g. sslmode)
+            parsed = urlparse(v)
+            if parsed.query:
+                query_params = parse_qs(parsed.query)
+                query_params.pop("sslmode", None)
+                query_params.pop("ssl", None)
+                query_params.pop("channel_binding", None)
+
+                new_query = urlencode(query_params, doseq=True)
+                v = urlunparse((
+                    parsed.scheme,
+                    parsed.netloc,
+                    parsed.path,
+                    parsed.params,
+                    new_query,
+                    parsed.fragment
+                ))
+
         return v
+
+    def model_post_init(self, __context):
+        # Configure asyncpg SSL via connect_args for cloud databases (e.g. Neon)
+        raw_env_db_url = (self.DATABASE_URL or "").lower()
+        parsed = urlparse(self.DATABASE_URL)
+        hostname = (parsed.hostname or "").lower()
+
+        # If Neon PostgreSQL or external host, set ssl="require" for asyncpg
+        if "neon.tech" in raw_env_db_url or "neon.tech" in hostname or (hostname and hostname not in ("localhost", "127.0.0.1", "postgres", "db")):
+            self._db_connect_args = {"ssl": "require"}
+        else:
+            self._db_connect_args = {}
+
+    @property
+    def DB_CONNECT_ARGS(self) -> Dict[str, Any]:
+        return self._db_connect_args
 
     # Redis Configuration
     REDIS_URL: str
