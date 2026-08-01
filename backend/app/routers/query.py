@@ -1,3 +1,4 @@
+import re
 import json
 import hashlib
 import logging
@@ -25,6 +26,39 @@ from app.middleware.rate_limiter import rate_limiter
 from app.utils.circuit_breaker import CircuitOpenError
 
 logger = logging.getLogger(__name__)
+
+
+def _qualify_sql_tables(sql: str, schema_name: str, valid_tables: set) -> str:
+    """
+    Prefix every unqualified table reference in a SQL string with the
+    PostgreSQL schema name so the query never depends on search_path.
+
+    FROM "hr"  ->  FROM "user_f42ba477477c427a_c3c898b0c7fd44c9"."hr"
+    JOIN employees -> JOIN "user_..."."employees"
+
+    Only replaces identifiers that are actually in valid_tables so we
+    never accidentally qualify subquery aliases or CTEs.
+    """
+    valid_lower = {t.lower(): t for t in valid_tables}
+
+    def _replace(match: re.Match) -> str:
+        keyword = match.group(1)          # FROM or JOIN
+        maybe_schema = match.group(2)     # present if already schema-qualified
+        table_raw = match.group(3).strip('"')  # table name without quotes
+        if maybe_schema:                  # already qualified — leave untouched
+            return match.group(0)
+        canonical = valid_lower.get(table_raw.lower())
+        if canonical:
+            return f'{keyword} "{schema_name}"."{canonical}"'
+        return match.group(0)             # unknown identifier — leave as-is
+
+    # Pattern matches: FROM ["schema".]"table"  or  JOIN ["schema".]"table"
+    # Group 1: keyword, Group 2: optional schema prefix, Group 3: table name
+    pattern = re.compile(
+        r'\b(FROM|JOIN)\s+(?:"([\w]+)"\s*\.\s*)?"?([\w]+)"?',
+        re.IGNORECASE,
+    )
+    return pattern.sub(_replace, sql)
 
 router = APIRouter(prefix="/query", tags=["Queries"])
 
@@ -296,12 +330,18 @@ async def execute_nl_query(
 
             raise HTTPException(status_code=400, detail=user_guidance)
 
-    # Step 6: Execute against PostgreSQL
+    # Step 6: Schema-qualify table names then execute against PostgreSQL
+    # This is the authoritative fix for UndefinedTableError:
+    # qualify every FROM/JOIN table with the actual schema so the query
+    # never depends on SET LOCAL search_path surviving the transaction.
+    sql_qualified = _qualify_sql_tables(sql, schema_name, valid_tables)
+    if sql_qualified != sql:
+        logger.info(f"[SQL QUALIFICATION] Qualified SQL: {sql_qualified}")
     try:
         results, latency = await sql_service.execute_pg_query(
             session=db_session,
             schema_name=schema_name,
-            sql=sql,
+            sql=sql_qualified,
             max_rows=1000,
             timeout=30.0,
         )

@@ -162,3 +162,25 @@ def test_suggest_schema_matches():
     best_low, kind_low, candidates_low = suggest_schema_matches("entries", schema_info)
     assert best_low is None
     assert "orders" in candidates_low and "customers" in candidates_low and "products" in candidates_low
+
+def test_qualify_sql_tables():
+    from app.routers.query import _qualify_sql_tables
+    schema_name = "user_f42ba477477c427a_c3c898b0c7fd44c9"
+    valid_tables = {"hr", "employees", "departments"}
+
+    # 1. Unqualified table in FROM
+    sql1 = 'SELECT COUNT(*) FROM "hr";'
+    res1 = _qualify_sql_tables(sql1, schema_name, valid_tables)
+    assert res1 == f'SELECT COUNT(*) FROM "{schema_name}"."hr";'
+
+    # 2. Unquoted table in FROM & JOIN
+    sql2 = 'SELECT * FROM hr JOIN employees ON hr.emp_id = employees.id;'
+    res2 = _qualify_sql_tables(sql2, schema_name, valid_tables)
+    assert f'FROM "{schema_name}"."hr"' in res2
+    assert f'JOIN "{schema_name}"."employees"' in res2
+
+    # 3. Already qualified table
+    sql3 = f'SELECT * FROM "{schema_name}"."hr";'
+    res3 = _qualify_sql_tables(sql3, schema_name, valid_tables)
+    assert res3 == sql3
+
