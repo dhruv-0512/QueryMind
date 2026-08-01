@@ -129,3 +129,16 @@ def test_validator_detects_hallucinated_column():
     is_valid, err = validate_sql_query(bad_sql, schema_info=schema_info)
     assert not is_valid
     assert "gpa" in err.lower()
+
+def test_validator_detects_nonexistent_table_entries():
+    schema_info = {
+        "tables": {
+            "users": {
+                "columns": ["id", "email", "role"]
+            }
+        }
+    }
+    bad_sql = "SELECT COUNT(*) FROM entries;"
+    is_valid, err = validate_sql_query(bad_sql, schema_info=schema_info)
+    assert not is_valid
+    assert "entries" in err.lower()

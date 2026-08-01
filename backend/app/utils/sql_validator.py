@@ -39,9 +39,7 @@ def validate_sql_query(
     # Perform AST schema grounding validation if schema_info is provided
     if schema_info and isinstance(schema_info, dict) and "tables" in schema_info:
         tables_dict = schema_info["tables"]
-        if not tables_dict:
-            return True, ""
-
+        
         # Normalize valid tables mapping: table_name -> list of lowercased column names
         normalized_schema = {}
         for tbl_name, tbl_meta in tables_dict.items():
@@ -54,27 +52,32 @@ def validate_sql_query(
                 cols = []
             normalized_schema[tbl_key] = [c.lower() for c in cols]
 
+        if not normalized_schema:
+            return False, "No tables found in the uploaded database schema."
+
         try:
             parsed = sqlglot.parse_one(query_clean, read="postgres")
         except Exception as parse_err:
             logger.warning(f"SQL parsing note: {parse_err}")
-            # Fall back to keyword check if AST parse fails on complex dialect constructs
             return True, ""
+
+        # Extract CTE aliases so CTE names aren't mistaken for missing tables
+        cte_names = {c.alias.lower() for c in parsed.find_all(exp.CTE) if c.alias}
 
         # Check table references
         referenced_tables = set()
         for t_node in parsed.find_all(exp.Table):
             if t_node.name:
                 t_name = t_node.name.lower()
-                # Ignore system schemas / functions
-                if t_name in ("information_schema", "pg_catalog"):
+                # Ignore system schemas / functions / CTEs
+                if t_name in ("information_schema", "pg_catalog") or t_name in cte_names:
                     continue
                 referenced_tables.add(t_name)
 
         for tbl in referenced_tables:
             if tbl not in normalized_schema:
-                logger.warning(f"SQL validation error: Table '{tbl}' does not exist in schema.")
-                return False, f"Invalid schema reference: Table '{tbl}' does not exist in the database schema."
+                logger.warning(f"SQL validation error: Table '{tbl}' does not exist in schema. Valid tables: {list(normalized_schema.keys())}")
+                return False, f"Invalid schema reference: Table '{tbl}' does not exist in the database schema. Available tables: {list(normalized_schema.keys())}."
 
         # Build available columns set across all referenced tables
         available_cols = set()
@@ -93,7 +96,7 @@ def validate_sql_query(
                     logger.warning(f"SQL validation error: Column '{col_name}' does not exist in table '{table_qualifier}'.")
                     return False, f"Invalid schema reference: Column '{col_name}' does not exist in table '{table_qualifier}'."
             else:
-                if col_name not in available_cols:
+                if available_cols and col_name not in available_cols:
                     logger.warning(f"SQL validation error: Column '{col_name}' does not exist in discovered schema.")
                     return False, f"Invalid schema reference: Column '{col_name}' does not exist in the database schema."
 

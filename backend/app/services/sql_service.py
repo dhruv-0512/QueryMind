@@ -57,6 +57,9 @@ class SqlService:
             self.llm_provider = "mock"
 
     def _extract_table_from_schema(self, schema_context: str) -> str:
+        match = re.search(r'Table:\s*"([^"]+)"', schema_context, re.IGNORECASE)
+        if match:
+            return match.group(1)
         match = re.search(
             r'CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?["\w]+\."?(\w+)"?',
             schema_context,

@@ -118,10 +118,15 @@ async def execute_nl_query(
     live_schema_text = live_schema_info.get("formatted_schema", "")
     full_schema_context = live_schema_text if live_schema_text else chroma_schema_context
 
-    # Structured Logging - Step 4 & Step 9
-    logger.info(f"[SCHEMA RETRIEVED] Discovered live schema for {schema_name}:\n{full_schema_context}")
-    logger.info(f"[SQL TEMPLATES RETRIEVED] Count: {len(retrieved_examples)}. Templates: {[(ex.get('question'), ex.get('similarity')) for ex in retrieved_examples]}")
-    logger.info(f"[PROMPT SENT TO LLM] Prompt generated for question: '{question}'")
+    # Pipeline Instrumentation Logging - Steps 1-5
+    logger.info(f"=== PIPELINE INSTRUMENTATION LOGS ===")
+    logger.info(f"1. RETRIEVED SCHEMA DOCUMENTS for schema '{schema_name}' (DB {request.db_id}):\n{full_schema_context}")
+    logger.info(f"2. RETRIEVED SQL EXAMPLES (ChromaDB sql_examples_collection):\n{json.dumps([{'question': ex.get('question'), 'sql': ex.get('sql')} for ex in retrieved_examples], indent=2)}")
+    logger.info(f"3. SIMILARITY SCORES:\n{json.dumps([{'question': ex.get('question'), 'similarity': ex.get('similarity')} for ex in retrieved_examples], indent=2)}")
+    
+    # Generate prompt preview
+    prompt_preview = sql_service._build_rag_prompt(full_schema_context, question, retrieved_examples)
+    logger.info(f"4. FINAL PROMPT SENT TO LLM:\n{prompt_preview}")
 
     # Publish Kafka events for SQL examples retrieval and completion
     await kafka_service.publish_event(
@@ -168,7 +173,7 @@ async def execute_nl_query(
     explanation = gen_result.get("explanation", "")
     confidence = gen_result.get("confidence", 0.0)
 
-    logger.info(f"[GENERATED SQL] {sql}")
+    logger.info(f"5. GENERATED SQL:\n{sql}")
 
     # Step 4: SQL Validation against Discovered Live Schema
     is_valid, validation_error = validate_sql_query(sql, schema_name, schema_info=live_schema_info)
