@@ -187,33 +187,55 @@ async def discover_live_schema(session: AsyncSession, schema_name: str) -> Dict[
     if not tables:
         logger.warning(
             f"[SCHEMA DISCOVERY] No tables found for schema='{safe_schema}'. "
-            f"Attempting fallback: searching for any 'user_*' schema containing this database's suffix..."
+            f"Attempting fallback: scanning all user_* schemas in PostgreSQL..."
         )
-        # Fallback: the old safe_identifier stripped leading digits from UUIDs, producing
-        # a different schema name than was stored in DatabaseConnection.
-        # Search for any matching user schema by suffix to allow self-healing.
+        # Fallback strategy:
+        # 1. List ALL user_* schemas in the database.
+        # 2. For each, check if it has BASE TABLE rows.
+        # 3. Pick the first one whose name shares the longest common prefix with safe_schema.
+        # This handles legacy schema names that were created with a different sanitisation
+        # rule than what is now stored in DatabaseConnection.
         try:
-            suffix = safe_schema.split("_", 2)[-1] if "_" in safe_schema else safe_schema
-            fallback_result = await session.execute(
+            all_schemas_result = await session.execute(
                 text("""
-                    SELECT schema_name
-                    FROM information_schema.schemata
-                    WHERE schema_name LIKE 'user_%'
-                      AND schema_name LIKE :suffix_pattern
-                    ORDER BY schema_name;
-                """),
-                {"suffix_pattern": f"%{suffix}%"}
+                    SELECT s.schema_name
+                    FROM information_schema.schemata s
+                    WHERE s.schema_name LIKE 'user\\_%' ESCAPE '\\'
+                    ORDER BY s.schema_name;
+                """)
             )
-            fallback_schemas = [r[0] for r in fallback_result.fetchall()]
-            logger.info(f"[SCHEMA DISCOVERY] Fallback candidate schemas: {fallback_schemas}")
+            all_user_schemas = [r[0] for r in all_schemas_result.fetchall()]
+            logger.info(f"[SCHEMA DISCOVERY] All user_* schemas in DB: {all_user_schemas}")
 
-            if fallback_schemas:
-                # Use the first (and usually only) matching schema
-                resolved_schema = fallback_schemas[0]
-                logger.info(f"[SCHEMA DISCOVERY] Using fallback schema: '{resolved_schema}' instead of '{safe_schema}'")
-                safe_schema = resolved_schema
+            # Extract hex digits from stored name for comparison (strip non-hex chars)
+            import re as _re
+            stored_hex = _re.sub(r"[^a-f0-9]", "", safe_schema.lower())
 
-                # Re-fetch tables with the resolved schema name
+            best_schema = None
+            best_score = 0
+            for candidate in all_user_schemas:
+                # Score = length of longest common prefix of hex digits
+                candidate_hex = _re.sub(r"[^a-f0-9]", "", candidate.lower())
+                score = 0
+                for a, b in zip(stored_hex, candidate_hex):
+                    if a == b:
+                        score += 1
+                    else:
+                        break
+                if score > best_score:
+                    best_score = score
+                    best_schema = candidate
+
+            logger.info(
+                f"[SCHEMA DISCOVERY] Best fallback match: '{best_schema}' "
+                f"(hex prefix score={best_score} vs stored hex='{stored_hex[:16]}...')"
+            )
+
+            # Only accept a match if it shares at least 8 hex chars (32-bit entropy)
+            if best_schema and best_score >= 8:
+                logger.info(f"[SCHEMA DISCOVERY] Using fallback schema: '{best_schema}' instead of '{safe_schema}'")
+                safe_schema = best_schema
+
                 tbl_result2 = await session.execute(
                     text("""
                         SELECT table_name
@@ -225,8 +247,15 @@ async def discover_live_schema(session: AsyncSession, schema_name: str) -> Dict[
                 )
                 tables = [r[0] for r in tbl_result2.fetchall()]
                 logger.info(f"[SCHEMA DISCOVERY] After fallback, tables: {tables}")
+            else:
+                logger.warning(
+                    f"[SCHEMA DISCOVERY] No matching schema found. "
+                    f"The data for schema '{safe_schema}' does not exist in PostgreSQL. "
+                    f"User must re-upload the database file."
+                )
         except Exception as fb_err:
             logger.error(f"[SCHEMA DISCOVERY] Fallback schema search failed: {fb_err}")
+
 
     # 2. Fetch columns
     col_result = await session.execute(

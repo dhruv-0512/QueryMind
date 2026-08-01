@@ -233,12 +233,13 @@ async def execute_nl_query(
             discovered_tables = list(live_schema_info.get("tables", {}).keys())
             if not invalid_id:
                 # validate_sql_query returned None for invalid_id — schema was empty
-                table_list = "\n".join(f"  - {t}" for t in discovered_tables) if discovered_tables else "  (no tables found in schema)"
                 user_guidance = (
-                    f"Query failed: the uploaded database schema could not be loaded.\n\n"
-                    f"Current schema: {schema_name}\n\n"
-                    f"Available tables:\n{table_list}\n\n"
-                    f"If this is unexpected, try re-uploading your database file."
+                    f"This database has no tables in PostgreSQL.\n\n"
+                    f"This usually happens when a previous upload failed partway through.\n\n"
+                    f"To fix this:\n"
+                    f"  1. Delete this database from the list.\n"
+                    f"  2. Re-upload your CSV / XLSX / JSON file.\n\n"
+                    f"(Schema: {schema_name})"
                 )
             else:
                 # Identifier was extracted correctly but had no match

@@ -111,7 +111,7 @@ async def upload_database(
                 "schema": schema_name,
                 "table": table_name,
                 "row_count": len(df),
-                "columns": [c["name"] for c in cols],
+                "columns": cols,  # already a list of column name strings
             }
         )
 
