@@ -1,6 +1,8 @@
 import re
 import logging
-from typing import Tuple
+from typing import Tuple, Dict, Any, Optional
+import sqlglot
+from sqlglot import exp
 
 logger = logging.getLogger(__name__)
 
@@ -9,11 +11,18 @@ PROHIBITED_KEYWORDS = {
     "replace", "create", "grant", "revoke", "attach", "detach", "vacuum"
 }
 
-def validate_sql_query(sql: str, schema_name: str) -> Tuple[bool, str]:
+def validate_sql_query(
+    sql: str,
+    schema_name: str = "",
+    schema_info: Optional[Dict[str, Any]] = None
+) -> Tuple[bool, str]:
     """
-    Validate SQL safety and syntax for PostgreSQL.
+    Validate SQL safety, syntax, and schema grounding for PostgreSQL.
     Returns (is_valid, error_message).
     """
+    if not sql or not sql.strip():
+        return False, "SQL query is empty."
+
     query_clean = re.sub(r'--.*$', '', sql, flags=re.MULTILINE)
     query_clean = re.sub(r'/\*.*?\*/', '', query_clean, flags=re.DOTALL)
 
@@ -26,5 +35,66 @@ def validate_sql_query(sql: str, schema_name: str) -> Tuple[bool, str]:
     query_trimmed = query_clean.strip().lower()
     if not query_trimmed.startswith("select") and not query_trimmed.startswith("with"):
         return False, "Only SELECT queries or CTEs (WITH ... SELECT) are allowed."
+
+    # Perform AST schema grounding validation if schema_info is provided
+    if schema_info and isinstance(schema_info, dict) and "tables" in schema_info:
+        tables_dict = schema_info["tables"]
+        if not tables_dict:
+            return True, ""
+
+        # Normalize valid tables mapping: table_name -> list of lowercased column names
+        normalized_schema = {}
+        for tbl_name, tbl_meta in tables_dict.items():
+            tbl_key = tbl_name.lower()
+            if isinstance(tbl_meta, dict):
+                cols = tbl_meta.get("columns", [])
+            elif isinstance(tbl_meta, list):
+                cols = tbl_meta
+            else:
+                cols = []
+            normalized_schema[tbl_key] = [c.lower() for c in cols]
+
+        try:
+            parsed = sqlglot.parse_one(query_clean, read="postgres")
+        except Exception as parse_err:
+            logger.warning(f"SQL parsing note: {parse_err}")
+            # Fall back to keyword check if AST parse fails on complex dialect constructs
+            return True, ""
+
+        # Check table references
+        referenced_tables = set()
+        for t_node in parsed.find_all(exp.Table):
+            if t_node.name:
+                t_name = t_node.name.lower()
+                # Ignore system schemas / functions
+                if t_name in ("information_schema", "pg_catalog"):
+                    continue
+                referenced_tables.add(t_name)
+
+        for tbl in referenced_tables:
+            if tbl not in normalized_schema:
+                logger.warning(f"SQL validation error: Table '{tbl}' does not exist in schema.")
+                return False, f"Invalid schema reference: Table '{tbl}' does not exist in the database schema."
+
+        # Build available columns set across all referenced tables
+        available_cols = set()
+        for tbl in referenced_tables:
+            available_cols.update(normalized_schema[tbl])
+
+        # Check column references
+        for col_node in parsed.find_all(exp.Column):
+            col_name = col_node.name.lower()
+            if not col_name or col_name == "*":
+                continue
+
+            table_qualifier = col_node.table.lower() if col_node.table else None
+            if table_qualifier and table_qualifier in normalized_schema:
+                if col_name not in normalized_schema[table_qualifier]:
+                    logger.warning(f"SQL validation error: Column '{col_name}' does not exist in table '{table_qualifier}'.")
+                    return False, f"Invalid schema reference: Column '{col_name}' does not exist in table '{table_qualifier}'."
+            else:
+                if col_name not in available_cols:
+                    logger.warning(f"SQL validation error: Column '{col_name}' does not exist in discovered schema.")
+                    return False, f"Invalid schema reference: Column '{col_name}' does not exist in the database schema."
 
     return True, ""

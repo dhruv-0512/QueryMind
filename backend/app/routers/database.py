@@ -22,6 +22,7 @@ from app.services.ingestion_service import (
     load_dataframe_to_pg,
     extract_pg_ddl,
     extract_pg_schema_metadata,
+    discover_live_schema,
     drop_temp_schema,
 )
 
@@ -74,13 +75,11 @@ async def upload_database(
         full_tbl = await load_dataframe_to_pg(db, schema_name, table_name, df)
         logger.info(f"Data loaded into {full_tbl}")
 
-        # Extract DDL and metadata
-        metadata = await extract_pg_schema_metadata(db, schema_name, table_name)
-        ddl = await extract_pg_ddl(db, schema_name, table_name)
-
-        # Build columns JSON
-        cols = metadata.get(table_name, {}).get("columns", [])
-        columns_json = json.dumps([c["name"] for c in cols])
+        # Discover live schema from information_schema
+        discovered = await discover_live_schema(db, schema_name)
+        tbl_meta = discovered["tables"].get(table_name, {})
+        cols = tbl_meta.get("columns", [safe_identifier(c) for c in df.columns])
+        columns_json = json.dumps(cols)
 
         # Save to Postgres
         db_conn = DatabaseConnection(
@@ -98,8 +97,7 @@ async def upload_database(
         await db.refresh(db_conn)
 
         # Generate schema chunks and index in ChromaDB
-        chunks = schema_service.generate_ddl_chunks(metadata)
-        await rag_service.index_schema(str(db_id), chunks)
+        await rag_service.index_schema(str(db_id), discovered["chunks"])
 
         # Publish Kafka event
         await kafka_service.publish_event(

@@ -136,80 +136,172 @@ async def load_dataframe_to_pg(
     return full_name
 
 
-async def extract_pg_ddl(session: AsyncSession, schema_name: str, table_name: str) -> str:
-    """Extract DDL for a table from PostgreSQL using pg_dump style generation."""
+async def discover_live_schema(session: AsyncSession, schema_name: str) -> Dict[str, Any]:
+    """
+    Discover all tables, columns, data types, primary keys, and foreign keys in schema_name from information_schema.
+    Returns a complete, structured dictionary and formatted string representation for RAG and LLM grounding.
+    """
     safe_schema = safe_identifier(schema_name)
-    safe_table = safe_identifier(table_name)
 
-    # Get columns
-    cols_result = await session.execute(
-        text(
-            """
-            SELECT column_name, data_type, is_nullable, column_default
-            FROM information_schema.columns
-            WHERE table_schema = :schema AND table_name = :tbl
-            ORDER BY ordinal_position
-        """
-        ),
-        {"schema": safe_schema, "tbl": safe_table},
+    # 1. Fetch tables
+    tbl_result = await session.execute(
+        text("""
+            SELECT table_name
+            FROM information_schema.tables
+            WHERE table_schema = :schema AND table_type = 'BASE TABLE'
+            ORDER BY table_name;
+        """),
+        {"schema": safe_schema}
     )
-    cols = cols_result.fetchall()
+    tables = [r[0] for r in tbl_result.fetchall()]
 
-    col_lines = []
-    for row in cols:
-        col_name = row[0]
-        data_type = row[1]
-        nullable = row[2] == "YES"
-        default = row[3]
-        line = f'  "{col_name}" {data_type}'
-        if not nullable:
-            line += " NOT NULL"
-        if default:
-            line += f" DEFAULT {default}"
-        col_lines.append(line)
+    # 2. Fetch columns
+    col_result = await session.execute(
+        text("""
+            SELECT table_name, column_name, data_type, is_nullable, column_default
+            FROM information_schema.columns
+            WHERE table_schema = :schema
+            ORDER BY table_name, ordinal_position;
+        """),
+        {"schema": safe_schema}
+    )
+    col_rows = col_result.fetchall()
 
-    ddl = f'CREATE TABLE "{safe_schema}"."{safe_table}" (\n' + ",\n".join(col_lines) + "\n);"
-    return ddl
+    # 3. Fetch Primary Keys
+    pk_result = await session.execute(
+        text("""
+            SELECT kcu.table_name, kcu.column_name
+            FROM information_schema.table_constraints tc
+            JOIN information_schema.key_column_usage kcu
+              ON tc.constraint_name = kcu.constraint_name
+              AND tc.table_schema = kcu.table_schema
+            WHERE tc.constraint_type = 'PRIMARY KEY' AND tc.table_schema = :schema;
+        """),
+        {"schema": safe_schema}
+    )
+    pks_by_table = {}
+    for r in pk_result.fetchall():
+        pks_by_table.setdefault(r[0], []).append(r[1])
+
+    # 4. Fetch Foreign Keys
+    fk_result = await session.execute(
+        text("""
+            SELECT
+                kcu1.table_name AS table_name,
+                kcu1.column_name AS column_name,
+                kcu2.table_name AS foreign_table_name,
+                kcu2.column_name AS foreign_column_name
+            FROM information_schema.referential_constraints rc
+            JOIN information_schema.key_column_usage kcu1
+              ON rc.constraint_name = kcu1.constraint_name
+              AND rc.constraint_schema = kcu1.table_schema
+            JOIN information_schema.key_column_usage kcu2
+              ON rc.unique_constraint_name = kcu2.constraint_name
+              AND rc.unique_constraint_schema = kcu2.table_schema
+            WHERE kcu1.table_schema = :schema;
+        """),
+        {"schema": safe_schema}
+    )
+    fks_by_table = {}
+    for r in fk_result.fetchall():
+        fks_by_table.setdefault(r[0], []).append({
+            "column": r[1],
+            "foreign_table": r[2],
+            "foreign_column": r[3]
+        })
+
+    tables_meta = {}
+    formatted_chunks = []
+
+    for t in tables:
+        t_cols = [c for c in col_rows if c[0] == t]
+        pk_cols = pks_by_table.get(t, [])
+        fk_list = fks_by_table.get(t, [])
+
+        col_defs = []
+        cols_summary = []
+        col_name_list = []
+
+        for row in t_cols:
+            c_name, c_type, c_nullable, c_default = row[1], row[2], row[3] == "YES", row[4]
+            is_pk = c_name in pk_cols
+            col_name_list.append(c_name)
+
+            def_str = f'"{c_name}" {c_type.upper()}'
+            if is_pk:
+                def_str += " PRIMARY KEY"
+            elif not c_nullable:
+                def_str += " NOT NULL"
+            if c_default:
+                def_str += f" DEFAULT {c_default}"
+
+            col_defs.append(f"  {def_str}")
+            cols_summary.append(f'    - "{c_name}" ({c_type.upper()}{", PRIMARY KEY" if is_pk else ""})')
+
+        fk_defs = []
+        for fk in fk_list:
+            fk_defs.append(f'  FOREIGN KEY ("{fk["column"]}") REFERENCES "{fk["foreign_table"]}"("{fk["foreign_column"]}")')
+
+        table_ddl = f'CREATE TABLE "{t}" (\n' + ",\n".join(col_defs + fk_defs) + "\n);"
+
+        tables_meta[t] = {
+            "columns": col_name_list,
+            "column_details": [
+                {"name": c[1], "type": c[2], "nullable": c[3] == "YES", "pk": c[1] in pk_cols}
+                for c in t_cols
+            ],
+            "primary_keys": pk_cols,
+            "foreign_keys": fk_list,
+            "ddl": table_ddl
+        }
+
+        chunk_text = (
+            f'Table: "{t}"\n'
+            f'Columns:\n' + "\n".join(cols_summary) + "\n"
+        )
+        if fk_list:
+            chunk_text += "Foreign Keys:\n" + "\n".join([f'  - "{fk["column"]}" -> "{fk["foreign_table"]}"."{fk["foreign_column"]}"' for fk in fk_list]) + "\n"
+        chunk_text += f"DDL:\n{table_ddl}"
+
+        formatted_chunks.append({
+            "table_name": t,
+            "chunk_text": chunk_text,
+            "columns": col_name_list,
+            "ddl": table_ddl
+        })
+
+    full_formatted_schema = "\n\n".join([c["chunk_text"] for c in formatted_chunks])
+
+    return {
+        "schema_name": safe_schema,
+        "tables": tables_meta,
+        "chunks": formatted_chunks,
+        "formatted_schema": full_formatted_schema
+    }
+
+
+async def extract_pg_ddl(session: AsyncSession, schema_name: str, table_name: str) -> str:
+    """Extract DDL for a table from PostgreSQL using information_schema."""
+    discovered = await discover_live_schema(session, schema_name)
+    tbl_meta = discovered["tables"].get(table_name)
+    if tbl_meta and "ddl" in tbl_meta:
+        return tbl_meta["ddl"]
+    return f'CREATE TABLE "{table_name}" ();'
 
 
 async def extract_pg_schema_metadata(
     session: AsyncSession, schema_name: str, table_name: str
 ) -> Dict[str, Any]:
-    """Extract table metadata (columns, types) from PostgreSQL for embeddings."""
-    safe_schema = safe_identifier(schema_name)
-    safe_table = safe_identifier(table_name)
-
-    cols_result = await session.execute(
-        text(
-            """
-            SELECT column_name, data_type, is_nullable
-            FROM information_schema.columns
-            WHERE table_schema = :schema AND table_name = :tbl
-            ORDER BY ordinal_position
-        """
-        ),
-        {"schema": safe_schema, "tbl": safe_table},
-    )
-    cols = cols_result.fetchall()
-
-    columns = []
-    for row in cols:
-        columns.append(
-            {
-                "name": row[0],
-                "type": row[1],
-                "notnull": row[2] == "NO",
-                "pk": False,
-                "default_value": None,
-            }
-        )
-
+    """Extract table metadata from PostgreSQL for ChromaDB indexing."""
+    discovered = await discover_live_schema(session, schema_name)
+    tbl_meta = discovered["tables"].get(table_name, {})
     return {
         table_name: {
-            "columns": columns,
-            "foreign_keys": [],
+            "columns": tbl_meta.get("column_details", []),
+            "foreign_keys": tbl_meta.get("foreign_keys", []),
+            "primary_keys": tbl_meta.get("primary_keys", []),
             "indexes": [],
-            "ddl": await extract_pg_ddl(session, schema_name, table_name),
+            "ddl": tbl_meta.get("ddl", ""),
             "index_ddls": [],
         }
     }

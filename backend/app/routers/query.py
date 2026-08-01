@@ -95,23 +95,32 @@ async def execute_nl_query(
         except Exception as e:
             logger.error(f"Cache parse error for key {cache_key}: {e}")
 
-    # Step 2: Parallel retrieval (Schema + SQL Examples)
+    # Step 2: Live Schema Discovery from information_schema + Parallel RAG Retrieval
     try:
         t0 = time.time()
-        schema_context, retrieved_examples = await asyncio.wait_for(
+        live_schema_info, chroma_schema_context, retrieved_examples = await asyncio.wait_for(
             asyncio.gather(
+                discover_live_schema(db_session, schema_name),
                 rag_service.retrieve_schema_context(str(request.db_id), question),
                 sql_example_retrieval_service.retrieve_examples(question, limit=5)
             ),
             timeout=60.0
         )
-        logger.info(f"TIMING Parallel retrieval took {time.time() - t0:.3f}s")
+        logger.info(f"TIMING Parallel retrieval and live schema discovery took {time.time() - t0:.3f}s")
     except asyncio.TimeoutError:
         logger.error("Parallel retrieval timed out after 60s")
         raise HTTPException(status_code=500, detail="Parallel retrieval timed out. Please try again.")
     except Exception as e:
         logger.error(f"Parallel retrieval failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed parallel retrieval: {str(e)}")
+
+    live_schema_text = live_schema_info.get("formatted_schema", "")
+    full_schema_context = live_schema_text if live_schema_text else chroma_schema_context
+
+    # Structured Logging - Step 4 & Step 9
+    logger.info(f"[SCHEMA RETRIEVED] Discovered live schema for {schema_name}:\n{full_schema_context}")
+    logger.info(f"[SQL TEMPLATES RETRIEVED] Count: {len(retrieved_examples)}. Templates: {[(ex.get('question'), ex.get('similarity')) for ex in retrieved_examples]}")
+    logger.info(f"[PROMPT SENT TO LLM] Prompt generated for question: '{question}'")
 
     # Publish Kafka events for SQL examples retrieval and completion
     await kafka_service.publish_event(
@@ -131,55 +140,96 @@ async def execute_nl_query(
         payload={
             "db_id": str(request.db_id),
             "question": question,
-            "schema_found": bool(schema_context),
+            "schema_found": bool(full_schema_context),
             "examples_count": len(retrieved_examples)
         }
     )
 
-    # Step 3: SQL Generation
+    # Step 3: SQL Generation & Grounding
     try:
         t0 = time.time()
-        gen_result = await sql_service.generate_sql(schema_context, question, retrieved_examples)
+        gen_result = await sql_service.generate_sql(full_schema_context, question, retrieved_examples)
         logger.info(f"TIMING SQL generation took {time.time() - t0:.3f}s")
-        sql = gen_result["sql"]
-        explanation = gen_result["explanation"]
-        confidence = gen_result["confidence"]
     except CircuitOpenError as e:
-        # Circuit breaker tripped — Gemini has failed 5+ times consecutively.
-        # Return 503 (not 500) to signal a *temporary* upstream outage.
-        # Clients should retry after the Retry-After period.
         logger.warning(f"Circuit breaker open for Gemini: {e}")
         raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         logger.error(f"SQL generation failed: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to generate SQL: {str(e)}")
 
-    # Step 4: SQL Validation
-    is_valid, validation_error = validate_sql_query(sql, schema_name)
+    # Handle explicit LLM un-matched field detection
+    if gen_result.get("error") and not gen_result.get("sql"):
+        field_error_msg = gen_result["error"]
+        logger.info(f"[UNMATCHED FIELD REJECTION] {field_error_msg}")
+        raise HTTPException(status_code=400, detail=field_error_msg)
+
+    sql = gen_result.get("sql", "")
+    explanation = gen_result.get("explanation", "")
+    confidence = gen_result.get("confidence", 0.0)
+
+    logger.info(f"[GENERATED SQL] {sql}")
+
+    # Step 4: SQL Validation against Discovered Live Schema
+    is_valid, validation_error = validate_sql_query(sql, schema_name, schema_info=live_schema_info)
+    logger.info(f"[VALIDATION RESULT] is_valid={is_valid}, error='{validation_error}'")
+
+    # Step 5: Retry once with feedback if validation fails
     if not is_valid:
-        await kafka_service.publish_event(
-            topic="query-events",
-            event_type="QueryRejected",
-            user_id=str(user_id),
-            payload={"db_id": str(request.db_id), "question": question, "sql": sql, "reason": validation_error}
-        )
+        logger.warning(f"[RETRY TRIGGERED] SQL validation failed: '{validation_error}'. Rediscovering schema and retrying once...")
+        try:
+            # Rediscover schema from information_schema
+            live_schema_info = await discover_live_schema(db_session, schema_name)
+            full_schema_context = live_schema_info.get("formatted_schema", full_schema_context)
+            
+            gen_result_retry = await sql_service.generate_sql(
+                full_schema_context,
+                question,
+                retrieved_examples,
+                validation_feedback=validation_error
+            )
+            
+            if gen_result_retry.get("error") and not gen_result_retry.get("sql"):
+                raise HTTPException(status_code=400, detail="The uploaded database does not contain the requested field.")
 
-        history = QueryHistory(
-            user_id=user_id,
-            db_id=request.db_id,
-            question=question,
-            generated_sql=sql,
-            explanation=explanation,
-            confidence=confidence,
-            status="rejected",
-            error_message=validation_error
-        )
-        db_session.add(history)
-        await db_session.commit()
+            sql_retry = gen_result_retry.get("sql", "")
+            logger.info(f"[REGENERATED SQL] {sql_retry}")
 
-        raise HTTPException(status_code=400, detail=f"Generated SQL rejected: {validation_error}")
+            is_valid_retry, validation_error_retry = validate_sql_query(sql_retry, schema_name, schema_info=live_schema_info)
+            logger.info(f"[RE-VALIDATION RESULT] is_valid={is_valid_retry}, error='{validation_error_retry}'")
 
-    # Step 5: Execute against PostgreSQL
+            if is_valid_retry:
+                sql = sql_retry
+                explanation = gen_result_retry.get("explanation", explanation)
+                confidence = gen_result_retry.get("confidence", confidence)
+            else:
+                await kafka_service.publish_event(
+                    topic="query-events",
+                    event_type="QueryRejected",
+                    user_id=str(user_id),
+                    payload={"db_id": str(request.db_id), "question": question, "sql": sql_retry, "reason": validation_error_retry}
+                )
+
+                history = QueryHistory(
+                    user_id=user_id,
+                    db_id=request.db_id,
+                    question=question,
+                    generated_sql=sql_retry,
+                    explanation=explanation,
+                    confidence=confidence,
+                    status="rejected",
+                    error_message=validation_error_retry
+                )
+                db_session.add(history)
+                await db_session.commit()
+
+                raise HTTPException(status_code=400, detail="The uploaded database does not contain the requested field.")
+        except HTTPException:
+            raise
+        except Exception as retry_err:
+            logger.error(f"Retry attempt error: {retry_err}")
+            raise HTTPException(status_code=400, detail="The uploaded database does not contain the requested field.")
+
+    # Step 6: Execute against PostgreSQL
     try:
         results, latency = await sql_service.execute_pg_query(
             session=db_session,
@@ -188,6 +238,7 @@ async def execute_nl_query(
             max_rows=1000,
             timeout=30.0,
         )
+        logger.info(f"[EXECUTION RESULT] Completed in {latency:.4f}s with {len(results)} rows.")
     except Exception as e:
         error_msg = str(e)
         logger.error(f"Query execution error: {e}")
