@@ -142,9 +142,42 @@ async def list_databases(
     return databases
 
 
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status, BackgroundTasks
+
+async def _background_cleanup_deleted_db(db_id: str, schema_name: str, user_id: str, db_name: str):
+    """Background task to clean up temp schema, ChromaDB embeddings, Redis cache, and publish audit event."""
+    from app.database import SessionLocal
+    try:
+        async with SessionLocal() as session:
+            await drop_temp_schema(session, schema_name)
+    except Exception as e:
+        logger.error(f"[ASYNC CLEANUP] Error dropping temp schema '{schema_name}': {e}")
+
+    try:
+        await rag_service.delete_schema(db_id)
+    except Exception as e:
+        logger.error(f"[ASYNC CLEANUP] Error deleting ChromaDB schema entries for '{db_id}': {e}")
+
+    try:
+        await cache_service.invalidate_db_cache(db_id)
+    except Exception as e:
+        logger.error(f"[ASYNC CLEANUP] Error invalidating Redis cache for '{db_id}': {e}")
+
+    try:
+        await kafka_service.publish_event(
+            topic="schema-events",
+            event_type="SchemaDeleted",
+            user_id=user_id,
+            payload={"db_id": db_id, "name": db_name}
+        )
+    except Exception as e:
+        logger.error(f"[ASYNC CLEANUP] Error publishing Kafka event for '{db_id}': {e}")
+
+
 @router.delete("/{id}", status_code=status.HTTP_200_OK)
 async def delete_database(
     id: UUID,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -164,34 +197,19 @@ async def delete_database(
         raise HTTPException(status_code=404, detail="Database not found.")
 
     schema_name = db_conn.schema_name
+    db_name = db_conn.name
 
-    # Drop the PostgreSQL temp schema
-    try:
-        await drop_temp_schema(db, schema_name)
-    except Exception as e:
-        logger.error(f"Error dropping schema {schema_name}: {e}")
-
-    # Remove ChromaDB embeddings
-    try:
-        await rag_service.delete_schema(str(id))
-    except Exception as e:
-        logger.error(f"Error deleting ChromaDB entries for {id}: {e}")
-
-    # Invalidate Redis-cached query results for this database.
-    # Failure mode: without this, cached responses linger until TTL expires,
-    # so a user could delete a database and still get "successful" responses
-    # with stale data from the cache — while the underlying schema no longer exists.
-    await cache_service.invalidate_db_cache(str(id))
-
-    # Remove DB record
+    # Delete database connection record immediately for sub-10ms response time
     await db.delete(db_conn)
     await db.commit()
 
-    await kafka_service.publish_event(
-        topic="schema-events",
-        event_type="SchemaDeleted",
-        user_id=str(current_user.id),
-        payload={"db_id": str(id), "name": db_conn.name}
+    # Schedule schema, ChromaDB, and cache cleanup in background
+    background_tasks.add_task(
+        _background_cleanup_deleted_db,
+        str(id),
+        schema_name,
+        str(current_user.id),
+        db_name
     )
 
-    return {"detail": f"Database {db_conn.name} and schema {schema_name} deleted."}
+    return {"detail": f"Database '{db_name}' deleted successfully."}

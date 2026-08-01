@@ -41,13 +41,20 @@ export const QueryWorkspace = ({ selectedDbId }) => {
     const dbName = dbObj ? dbObj.name : 'this database';
     if (!window.confirm(`Delete database "${dbName}"? This cannot be undone.`)) return;
 
+    const previousDatabases = databases;
+    const targetId = activeDbId;
+    const updated = databases.filter(d => d.id !== targetId);
+
+    // Optimistic UI update
+    setDatabases(updated);
+    setActiveDbId(updated.length > 0 ? updated[0].id : '');
+    setQueryResult(null);
+
     try {
-      await api.delete(`/database/${activeDbId}`);
-      const updated = databases.filter(d => d.id !== activeDbId);
-      setDatabases(updated);
-      setActiveDbId(updated.length > 0 ? updated[0].id : '');
-      setQueryResult(null);
+      await api.delete(`/database/${targetId}`);
     } catch (err) {
+      setDatabases(previousDatabases);
+      setActiveDbId(targetId);
       alert(err.message || 'Failed to delete database.');
     }
   };

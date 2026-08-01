@@ -148,17 +148,39 @@ const App = () => {
         }}
       >
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setIsMobileMenuOpen(v => !v)}
+            style={{ color: 'var(--text-muted)', padding: 4, lineHeight: 0 }}
+            aria-label="Toggle menu"
+          >
+            {isMobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
+          </button>
           <Terminal size={17} style={{ color: 'var(--accent)' }} />
           <span style={{ fontWeight: 700, fontSize: '0.9rem', letterSpacing: '-0.01em', color: 'var(--text-primary)' }}>
             QueryMind
           </span>
         </div>
+
+        {/* Top Right Mobile Logout Button */}
         <button
-          onClick={() => setIsMobileMenuOpen(v => !v)}
-          style={{ color: 'var(--text-muted)', padding: 4, lineHeight: 0 }}
-          aria-label="Toggle menu"
+          onClick={handleLogout}
+          title="Log Out"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4,
+            fontSize: '0.75rem',
+            fontWeight: 600,
+            color: '#ffffff',
+            background: '#ef4444',
+            border: 'none',
+            borderRadius: 5,
+            padding: '4px 10px',
+            cursor: 'pointer',
+          }}
         >
-          {isMobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
+          <LogOut size={12} />
+          Log Out
         </button>
       </header>
 
@@ -335,10 +357,87 @@ const App = () => {
         {/* Offset for fixed sidebar on desktop */}
         <div
           className="md:pl-56"
-          style={{ minHeight: '100vh', paddingTop: '2px' }}
+          style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}
         >
-          <div style={{ maxWidth: 1100, margin: '0 auto', padding: '40px 36px' }}
-               className="px-4 py-8 md:px-9 md:py-10">
+          {/* Top Right Desktop Header Bar */}
+          <header
+            style={{
+              height: 56,
+              background: 'var(--bg-surface)',
+              borderBottom: '1px solid var(--border-subtle)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '0 36px',
+            }}
+            className="hidden md:flex px-4 md:px-9"
+          >
+            {/* Active section title */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                {currentPage === 'dashboard' && 'Databases'}
+                {currentPage === 'workspace' && 'Query Workspace'}
+                {currentPage === 'history'   && 'Query History'}
+                {currentPage === 'admin'     && 'Admin Panel'}
+              </span>
+            </div>
+
+            {/* Top Right User Badge & Log Out Button */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{
+                  width: 26,
+                  height: 26,
+                  borderRadius: '50%',
+                  background: 'var(--bg-raised)',
+                  border: '1px solid var(--border-default)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}>
+                  <User size={13} style={{ color: 'var(--text-muted)' }} />
+                </div>
+                <span style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-primary)' }}>
+                  {userEmail}
+                </span>
+                <span className="badge badge-accent" style={{ fontSize: '0.65rem', textTransform: 'uppercase' }}>
+                  {userRole}
+                </span>
+              </div>
+
+              <button
+                onClick={handleLogout}
+                title="Log Out of QueryMind"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  fontSize: '0.78rem',
+                  fontWeight: 600,
+                  color: '#ffffff',
+                  background: '#ef4444',
+                  border: 'none',
+                  borderRadius: 6,
+                  cursor: 'pointer',
+                  padding: '6px 14px',
+                  boxShadow: '0 1px 3px rgba(239, 68, 68, 0.3)',
+                  transition: 'all 0.15s ease',
+                }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.background = '#dc2626';
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.background = '#ef4444';
+                }}
+              >
+                <LogOut size={13} />
+                Log Out
+              </button>
+            </div>
+          </header>
+
+          <div style={{ maxWidth: 1100, margin: '0 auto', width: '100%', padding: '32px 36px', flex: 1 }}
+               className="px-4 py-8 md:px-9 md:py-8">
             <Suspense fallback={null}>
               {currentPage === 'dashboard'  && <Dashboard userRole={userRole} onSelectDatabase={handleSelectDatabase} />}
               {currentPage === 'workspace'  && <QueryWorkspace selectedDbId={selectedDbId} selectedDbName={selectedDbName} />}

@@ -39,11 +39,15 @@ export const Dashboard = ({ userRole, onSelectDatabase }) => {
   useEffect(() => { fetchDatabases(); }, [fetchDatabases]);
 
   const handleDelete = async (id, name) => {
-    if (!window.confirm(`Delete "${name}" and all associated vector indexes?`)) return;
+    if (!window.confirm(`Delete "${name}"? This action cannot be undone.`)) return;
+    // Optimistic UI update — remove immediately so there is 0 lag
+    const previousDatabases = databases;
+    setDatabases((prev) => prev.filter((db) => db.id !== id));
+
     try {
       await api.delete(`/database/${id}`);
-      setDatabases((prev) => prev.filter((db) => db.id !== id));
     } catch (err) {
+      setDatabases(previousDatabases);
       alert(err.message || 'Failed to delete database.');
     }
   };
