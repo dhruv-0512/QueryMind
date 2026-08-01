@@ -19,6 +19,7 @@ from app.services.sql_service import sql_service
 from app.services.sql_example_retrieval_service import sql_example_retrieval_service
 from app.services.cache_service import cache_service
 from app.services.kafka_service import kafka_service
+from app.services.ingestion_service import discover_live_schema
 from app.utils.sql_validator import validate_sql_query
 from app.middleware.rate_limiter import rate_limiter
 from app.utils.circuit_breaker import CircuitOpenError
