@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: querymind-backend
+    env: python
+    region: oregon
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_URL
+        value: postgresql+asyncpg://neondb_owner:npg_KYFsX3jR8oBd@ep-plain-shadow-ayjgzgk0.c-5.us-east-2.aws.neon.tech/neondb?sslmode=require
+      - key: REDIS_URL
+        value: rediss://default:gQAAAAAAARsOAAIgcDI4NDY2NTc2MmZkYTk0NWRlOTc4MGNiYjU0NzhiZDllMA@wanted-dinosaur-72462.upstash.io:6379
+      - key: KAFKA_BOOTSTRAP_SERVERS
+        value: localhost:9092
+      - key: CHROMADB_HOST
+        value: localhost
+      - key: CHROMADB_PORT
+        value: 8000
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      - key: LLM_PROVIDER
+        value: deepseek
+      - key: EMBEDDING_PROVIDER
+        value: gemini
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: CORS_ORIGINS
+        value: https://query-mind-brown.vercel.app,http://localhost:3000,http://localhost:5173

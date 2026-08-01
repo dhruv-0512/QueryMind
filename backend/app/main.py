@@ -33,14 +33,34 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Configure CORS — allow override via CORS_ORIGINS env var (comma-separated)
-_default_origins = ["http://localhost:3000", "http://localhost:5173"]
-_cors_origins = os.getenv("CORS_ORIGINS", "").split(",") if os.getenv("CORS_ORIGINS") else _default_origins
+# Configure CORS
+# Always allow production Vercel frontend, localhost dev environments, and Vercel previews
+_default_origins = [
+    "https://query-mind-brown.vercel.app",
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://localhost:8000",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:8000",
+]
+
+_env_origins_raw = os.getenv("CORS_ORIGINS", "")
+_parsed_env_origins = [origin.strip() for origin in _env_origins_raw.split(",") if origin.strip()]
+
+_allowed_origins = set(_default_origins)
+for _origin in _parsed_env_origins:
+    if _origin == "*":
+        _allowed_origins.add("*")
+    elif "*" not in _origin:
+        _allowed_origins.add(_origin.rstrip("/"))
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_cors_origins,
+    allow_origins=list(_allowed_origins),
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
 )
 
