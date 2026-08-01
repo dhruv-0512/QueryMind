@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Send, AlertCircle, Database, Table, BarChart2 } from 'lucide-react';
+import { Send, AlertCircle, Database, Table, BarChart2, Trash2 } from 'lucide-react';
 import { api } from '../services/api';
 import { SQLViewer } from '../components/SQLViewer';
 import { ResultsTable } from '../components/ResultsTable';
@@ -34,6 +34,23 @@ export const QueryWorkspace = ({ selectedDbId }) => {
     };
     fetchDatabases();
   }, [selectedDbId]);
+
+  const handleDeleteDatabase = async () => {
+    if (!activeDbId) return;
+    const dbObj = databases.find(d => d.id === activeDbId);
+    const dbName = dbObj ? dbObj.name : 'this database';
+    if (!window.confirm(`Delete database "${dbName}"? This cannot be undone.`)) return;
+
+    try {
+      await api.delete(`/database/${activeDbId}`);
+      const updated = databases.filter(d => d.id !== activeDbId);
+      setDatabases(updated);
+      setActiveDbId(updated.length > 0 ? updated[0].id : '');
+      setQueryResult(null);
+    } catch (err) {
+      alert(err.message || 'Failed to delete database.');
+    }
+  };
 
   const handleQuery = async (e) => {
     e.preventDefault();
@@ -110,32 +127,70 @@ export const QueryWorkspace = ({ selectedDbId }) => {
               <label style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-secondary)' }}>
                 Data source
               </label>
-              <div style={{ position: 'relative' }}>
-                <Database
-                  size={13}
-                  style={{
-                    position: 'absolute',
-                    left: 10,
-                    top: '50%',
-                    transform: 'translateY(-50%)',
-                    color: 'var(--text-muted)',
-                    pointerEvents: 'none',
-                  }}
-                />
-                <select
-                  value={activeDbId}
-                  onChange={(e) => setActiveDbId(e.target.value)}
-                  className="input-field"
-                  style={{ paddingLeft: 30, appearance: 'none', cursor: 'pointer' }}
-                  disabled={isLoading}
-                >
-                  {databases.length === 0 && (
-                    <option value="">No databases registered</option>
-                  )}
-                  {databases.map((db) => (
-                    <option key={db.id} value={db.id}>{db.name}</option>
-                  ))}
-                </select>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ position: 'relative', flex: 1 }}>
+                  <Database
+                    size={13}
+                    style={{
+                      position: 'absolute',
+                      left: 10,
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      color: 'var(--text-muted)',
+                      pointerEvents: 'none',
+                    }}
+                  />
+                  <select
+                    value={activeDbId}
+                    onChange={(e) => setActiveDbId(e.target.value)}
+                    className="input-field"
+                    style={{ paddingLeft: 30, appearance: 'none', cursor: 'pointer' }}
+                    disabled={isLoading}
+                  >
+                    {databases.length === 0 && (
+                      <option value="">No databases registered</option>
+                    )}
+                    {databases.map((db) => (
+                      <option key={db.id} value={db.id}>{db.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {activeDbId && (
+                  <button
+                    type="button"
+                    onClick={handleDeleteDatabase}
+                    title="Delete selected database"
+                    disabled={isLoading}
+                    style={{
+                      background: 'rgba(239, 68, 68, 0.1)',
+                      border: '1px solid rgba(239, 68, 68, 0.25)',
+                      color: '#ef4444',
+                      padding: '0 10px',
+                      height: 38,
+                      borderRadius: 6,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 5,
+                      fontSize: '0.75rem',
+                      fontWeight: 500,
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                      flexShrink: 0,
+                    }}
+                    onMouseEnter={e => {
+                      e.currentTarget.style.background = '#ef4444';
+                      e.currentTarget.style.color = '#ffffff';
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)';
+                      e.currentTarget.style.color = '#ef4444';
+                    }}
+                  >
+                    <Trash2 size={13} />
+                    Delete
+                  </button>
+                )}
               </div>
             </div>
 

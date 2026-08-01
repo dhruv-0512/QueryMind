@@ -251,7 +251,7 @@ const App = () => {
 
         {/* User footer */}
         <div style={{ padding: '12px 20px 16px', borderTop: '1px solid var(--border-subtle)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 12 }}>
             <div style={{
               width: 28,
               height: 28,
@@ -291,23 +291,34 @@ const App = () => {
 
           <button
             onClick={handleLogout}
+            title="Log out of QueryMind"
             style={{
+              width: '100%',
               display: 'flex',
               alignItems: 'center',
+              justifyContent: 'center',
               gap: 7,
               fontSize: '0.8rem',
-              color: 'var(--text-muted)',
-              background: 'none',
-              border: 'none',
+              fontWeight: 500,
+              color: '#ef4444',
+              background: 'rgba(239, 68, 68, 0.08)',
+              border: '1px solid rgba(239, 68, 68, 0.2)',
+              borderRadius: 6,
               cursor: 'pointer',
-              padding: '4px 0',
-              transition: 'color 0.15s',
+              padding: '7px 12px',
+              transition: 'all 0.15s ease',
             }}
-            onMouseEnter={e => e.currentTarget.style.color = 'var(--color-danger)'}
-            onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}
+            onMouseEnter={e => {
+              e.currentTarget.style.background = '#ef4444';
+              e.currentTarget.style.color = '#ffffff';
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.background = 'rgba(239, 68, 68, 0.08)';
+              e.currentTarget.style.color = '#ef4444';
+            }}
           >
-            <LogOut size={13} />
-            Sign out
+            <LogOut size={14} />
+            Log Out
           </button>
         </div>
       </aside>

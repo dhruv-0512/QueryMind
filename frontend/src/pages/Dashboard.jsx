@@ -218,23 +218,32 @@ export const Dashboard = ({ userRole, onSelectDatabase }) => {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                       <button
                         onClick={() => handleDelete(db.id, db.name)}
-                        title="Delete database"
+                        title={`Delete ${db.name}`}
                         style={{
-                          background: 'none',
-                          border: 'none',
+                          background: 'rgba(239, 68, 68, 0.1)',
+                          border: '1px solid rgba(239, 68, 68, 0.25)',
                           cursor: 'pointer',
-                          color: 'var(--text-disabled)',
-                          padding: 4,
+                          color: '#ef4444',
+                          padding: '4px 8px',
                           borderRadius: 4,
-                          lineHeight: 0,
-                          transition: 'color 0.15s',
-                          opacity: 0,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 4,
+                          fontSize: '0.75rem',
+                          fontWeight: 500,
+                          transition: 'all 0.15s ease',
                         }}
-                        className="group-hover:opacity-100"
-                        onMouseEnter={e => e.currentTarget.style.color = 'var(--color-danger)'}
-                        onMouseLeave={e => e.currentTarget.style.color = 'var(--text-disabled)'}
+                        onMouseEnter={e => {
+                          e.currentTarget.style.background = '#ef4444';
+                          e.currentTarget.style.color = '#ffffff';
+                        }}
+                        onMouseLeave={e => {
+                          e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)';
+                          e.currentTarget.style.color = '#ef4444';
+                        }}
                       >
-                        <Trash2 size={14} />
+                        <Trash2 size={13} />
+                        Delete
                       </button>
 
                       <button
