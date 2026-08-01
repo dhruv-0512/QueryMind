@@ -61,8 +61,10 @@ class Settings(BaseSettings):
     KAFKA_BOOTSTRAP_SERVERS: str
 
     # ChromaDB Configuration
-    CHROMADB_HOST: str
-    CHROMADB_PORT: int
+    CHROMADB_HOST: str = "localhost"
+    CHROMADB_PORT: int = 8000
+    CHROMADB_MODE: str = "persistent"  # "persistent" or "http"
+    CHROMADB_PATH: str = "./chroma_data"
 
     # LLM Configuration
     GEMINI_API_KEY: str = ""

@@ -27,14 +27,28 @@ class SqlExampleRetrievalService:
         if self.collection is not None:
             return
         try:
-            logger.info(
-                f"Connecting to ChromaDB for SQL examples at "
-                f"{settings.CHROMADB_HOST}:{settings.CHROMADB_PORT}..."
-            )
-            self.client = chromadb.HttpClient(
-                host=settings.CHROMADB_HOST,
-                port=settings.CHROMADB_PORT,
-            )
+            mode = getattr(settings, "CHROMADB_MODE", "persistent").lower()
+            host = settings.CHROMADB_HOST
+            port = settings.CHROMADB_PORT
+            path = getattr(settings, "CHROMADB_PATH", "./chroma_data")
+
+            if mode == "http":
+                logger.info(f"Connecting to ChromaDB HTTP server at {host}:{port}...")
+                self.client = chromadb.HttpClient(host=host, port=port)
+            else:
+                if host and host not in ("localhost", "127.0.0.1") and not host.startswith("."):
+                    try:
+                        logger.info(f"Attempting connection to ChromaDB HTTP server at {host}:{port}...")
+                        client = chromadb.HttpClient(host=host, port=port)
+                        client.heartbeat()
+                        self.client = client
+                    except Exception as http_err:
+                        logger.info(f"HTTP connection to {host}:{port} failed ({http_err}). Using PersistentClient at '{path}'.")
+                        self.client = chromadb.PersistentClient(path=path)
+                else:
+                    logger.info(f"Initializing ChromaDB PersistentClient at '{path}'...")
+                    self.client = chromadb.PersistentClient(path=path)
+
             self.collection = self.client.get_or_create_collection(
                 name="sql_examples_collection",
             )

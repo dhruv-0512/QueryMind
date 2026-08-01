@@ -19,8 +19,10 @@ frontend/.npm-cache/
 dist/
 frontend/dist/
 
-# User data (SQLite databases)
+# User data (SQLite databases & Chroma vector storage)
 backend/user_sqlite_dbs/
+chroma_data/
+backend/chroma_data/
 
 # Logs
 *.log
