@@ -116,7 +116,30 @@ async def execute_nl_query(
         raise HTTPException(status_code=500, detail=f"Failed parallel retrieval: {str(e)}")
 
     live_schema_text = live_schema_info.get("formatted_schema", "")
-    full_schema_context = live_schema_text if live_schema_text else chroma_schema_context
+    live_tables = live_schema_info.get("tables", {})
+
+    # CRITICAL: NEVER fall back to stale ChromaDB schema when the live schema is empty.
+    # Falling back to ChromaDB schema context causes the LLM to hallucinate table names
+    # (e.g. 'hr', 'healthcare') from old/stale indexed embeddings.
+    # If the live schema is authoritative and returns no tables, stop here.
+    if not live_schema_text or not live_tables:
+        logger.error(
+            f"[SCHEMA GROUNDING] Live schema is empty for db_id={request.db_id}, schema='{schema_name}'. "
+            f"Refusing to fall back to stale ChromaDB schema context — that causes table name hallucination."
+        )
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "This database has no tables in PostgreSQL.\n\n"
+                "This usually happens when a previous upload failed partway through.\n\n"
+                "To fix this:\n"
+                "  1. Delete this database from the list.\n"
+                "  2. Re-upload your CSV / XLSX / JSON file."
+            )
+        )
+
+    full_schema_context = live_schema_text
+    valid_tables = set(live_tables.keys())
 
     # Log schema discovery diagnostics
     discovered_tables = list(live_schema_info.get("tables", {}).keys())

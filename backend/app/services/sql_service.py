@@ -239,12 +239,23 @@ class SqlService:
             for i, ex in enumerate(retrieved_examples, 1):
                 sim = ex.get("similarity")
                 sim_note = f" (similarity: {sim:.0%})" if sim is not None else ""
+                # Anonymise the SQL so the LLM cannot copy concrete table/column
+                # names from the example corpus into the generated query.
+                # Replace every FROM/JOIN identifier with the generic placeholder
+                # <your_table> so only the clause structure is retained.
+                raw_sql = ex.get("sql", "")
+                anon_sql = re.sub(
+                    r'\b(FROM|JOIN)\s+["`]?[\w]+["`]?',
+                    r'\1 <your_table>',
+                    raw_sql,
+                    flags=re.IGNORECASE,
+                )
                 parts.append(
                     f"Example {i}{sim_note}:\n"
                     f"Question:\n{ex['question']}\n"
-                    f"SQL:\n{ex['sql']}"
+                    f"SQL pattern (table name anonymised — use your live schema table):\n{anon_sql}"
                 )
-            examples_block = "LOGICAL SQL TEMPLATE EXAMPLES (FOR CLAUSE STRUCTURE ONLY):\n" + "\n\n".join(parts)
+            examples_block = "LOGICAL SQL TEMPLATE EXAMPLES (FOR CLAUSE STRUCTURE ONLY — do NOT use <your_table> literally):\n" + "\n\n".join(parts)
 
         feedback_block = ""
         if validation_feedback:
