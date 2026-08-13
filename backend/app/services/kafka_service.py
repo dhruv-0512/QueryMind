@@ -49,11 +49,7 @@ class KafkaService:
             return
 
         event = {
-            # Unique event ID — the audit consumer uses this with
-            # INSERT ... ON CONFLICT (event_id) DO NOTHING to guarantee
-            # exactly-once processing even when Kafka replays offsets
-            # after a consumer crash or rebalance.
-            "event_id": str(uuid.uuid4()),
+            "event_id": str(uuid.uuid4()),  # used for idempotent consumer inserts
             "event_type": event_type,
             "user_id": user_id,
             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -61,7 +57,6 @@ class KafkaService:
         }
 
         try:
-            # Send and wait checks for delivery confirmation in a non-blocking way
             await self.producer.send_and_wait(topic, event)
             logger.info(f"Published event '{event_type}' to topic '{topic}'")
         except Exception as e:

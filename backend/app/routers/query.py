@@ -94,9 +94,7 @@ async def execute_nl_query(
 
     # Step 1: Redis cache
     question_hash = get_question_hash(question)
-    # Cache key includes user_id for per-user isolation.
-    # Without this, user A could see user B's cached results for a shared
-    # database, leaking data across tenant boundaries.
+    # Per-user cache key prevents cross-tenant cache leakage on shared DBs.
     cache_key = f"query_cache:{user_id}:{request.db_id}:{question_hash}"
 
     cached_data = await cache_service.get_cache(cache_key)
@@ -152,10 +150,8 @@ async def execute_nl_query(
     live_schema_text = live_schema_info.get("formatted_schema", "")
     live_tables = live_schema_info.get("tables", {})
 
-    # CRITICAL: NEVER fall back to stale ChromaDB schema when the live schema is empty.
-    # Falling back to ChromaDB schema context causes the LLM to hallucinate table names
-    # (e.g. 'hr', 'healthcare') from old/stale indexed embeddings.
-    # If the live schema is authoritative and returns no tables, stop here.
+    # NEVER fall back to stale ChromaDB schema — that causes the LLM to hallucinate
+    # table names from old embeddings. Live schema is authoritative; bail if empty.
     if not live_schema_text or not live_tables:
         logger.error(
             f"[SCHEMA GROUNDING] Live schema is empty for db_id={request.db_id}, schema='{schema_name}'. "
@@ -185,7 +181,7 @@ async def execute_nl_query(
         f"  Tables         : {discovered_tables if discovered_tables else '(none found)'}"
     )
 
-    # Pipeline Instrumentation Logging - Steps 1-5
+    # Pipeline instrumentation
     logger.info(f"=== PIPELINE INSTRUMENTATION LOGS ===")
     logger.info(f"1. RETRIEVED SCHEMA DOCUMENTS for schema '{schema_name}' (DB {request.db_id}):\n{full_schema_context}")
     logger.info(f"2. RETRIEVED SQL EXAMPLES (ChromaDB sql_examples_collection):\n{json.dumps([{'question': ex.get('question'), 'sql': ex.get('sql')} for ex in retrieved_examples], indent=2)}")
@@ -330,10 +326,7 @@ async def execute_nl_query(
 
             raise HTTPException(status_code=400, detail=user_guidance)
 
-    # Step 6: Schema-qualify table names then execute against PostgreSQL
-    # This is the authoritative fix for UndefinedTableError:
-    # qualify every FROM/JOIN table with the actual schema so the query
-    # never depends on SET LOCAL search_path surviving the transaction.
+    # Qualify every FROM/JOIN table with the schema prefix; can't rely on search_path persisting.
     sql_qualified = _qualify_sql_tables(sql, schema_name, valid_tables)
     if sql_qualified != sql:
         logger.info(f"[SQL QUALIFICATION] Qualified SQL: {sql_qualified}")

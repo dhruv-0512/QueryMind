@@ -23,7 +23,7 @@ async def lifespan(app: FastAPI):
         await loop.run_in_executor(None, _get_local_model)
         logger.info("Embedding model preloaded successfully")
 
-    # Ensure database schema/tables exist on startup (defense in depth)
+    # Ensure database schema/tables exist on startup
     try:
         from app.database import engine, Base
         import app.models  # Ensure all ORM models are registered
@@ -33,9 +33,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Database schema auto-creation check note: {e}")
 
-    # Migrate legacy DatabaseConnection rows whose schema_name exceeds 63 chars.
-    # PostgreSQL silently truncated such names at CREATE SCHEMA time, so the actual
-    # schema in PG is the first 63 chars.  Update the stored value to match.
+    # Migrate schema_name values > 63 chars — PG truncates at creation, stored value must match.
     try:
         from app.database import SessionLocal
         from sqlalchemy import text as _text

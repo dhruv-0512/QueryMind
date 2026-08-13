@@ -84,17 +84,7 @@ class CacheService:
             return False, 0
 
     async def invalidate_db_cache(self, db_id: str) -> None:
-        """
-        Invalidate all cached query results for a specific database.
-
-        Called when a database is deleted — prevents stale cache from serving
-        results for a database whose underlying schema no longer exists.
-        Without this, users could get confusing "successful" responses with
-        data from a deleted database until the TTL expires.
-
-        Uses SCAN (cursor-based, non-blocking) instead of KEYS (which blocks
-        the Redis event loop on large keyspaces).
-        """
+        """Remove all cached query entries for a deleted database. Uses SCAN to avoid blocking Redis."""
         try:
             # Pattern matches any user's cached queries for this db_id.
             # Cache key format: query_cache:{user_id}:{db_id}:{question_hash}

@@ -13,10 +13,7 @@ async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: AsyncSession = Depends(get_db)
 ) -> User:
-    """
-    Validate JWT access token from Authorization header and return the user.
-    Uses Dependency Injection in FastAPI.
-    """
+    """Validate JWT access token from Authorization header and return the user."""
     token = credentials.credentials
     payload = decode_access_token(token)
     if not payload:

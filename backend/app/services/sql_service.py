@@ -17,13 +17,8 @@ logger = logging.getLogger(__name__)
 
 RAG_DIRECT_THRESHOLD = 0.78
 
-# Circuit breaker for the Gemini API.
-# Trips after 5 consecutive failures (timeout, HTTP error, malformed response),
-# stays open for 30 seconds (all requests fail fast with CircuitOpenError),
-# then allows one half-open trial before fully closing.
-# This protects the backend when Gemini is down: instead of every request
-# blocking for 25s (the asyncio.wait_for timeout), they fail in <1ms,
-# keeping the server responsive for cached queries and non-AI endpoints.
+# Circuit breaker for the Gemini API: trips after 5 consecutive failures,
+# stays open 30s (fail-fast), then half-open for one trial.
 gemini_circuit = CircuitBreaker(
     failure_threshold=5,
     recovery_timeout=30.0,
@@ -126,11 +121,9 @@ class SqlService:
 
     def _match_column(self, keyword: str, available_cols: List[str]) -> Optional[str]:
         kw_lower = keyword.lower()
-        # 1. Exact match
         for col in available_cols:
             if col.lower() == kw_lower:
                 return col
-        # 2. Substring match
         for col in available_cols:
             if kw_lower in col.lower() or col.lower() in kw_lower:
                 return col
@@ -239,10 +232,7 @@ class SqlService:
             for i, ex in enumerate(retrieved_examples, 1):
                 sim = ex.get("similarity")
                 sim_note = f" (similarity: {sim:.0%})" if sim is not None else ""
-                # Anonymise the SQL so the LLM cannot copy concrete table/column
-                # names from the example corpus into the generated query.
-                # Replace every FROM/JOIN identifier with the generic placeholder
-                # <your_table> so only the clause structure is retained.
+                # Anonymise table names so the LLM uses live schema, not the example corpus.
                 raw_sql = ex.get("sql", "")
                 anon_sql = re.sub(
                     r'\b(FROM|JOIN)\s+["`]?[\w]+["`]?',
@@ -390,10 +380,7 @@ Return JSON format:
         prompt = self._build_rag_prompt(schema_context, user_question, retrieved_examples, validation_feedback)
 
         try:
-            # Circuit breaker wraps ONLY the Gemini network call.
-            # If Gemini has failed 5 times in a row, this raises
-            # CircuitOpenError immediately (<1ms) instead of waiting
-            # 25 seconds for another inevitable timeout.
+            # Raises CircuitOpenError immediately if Gemini has failed 5x in a row.
             response = await gemini_circuit.call(
                 asyncio.wait_for(
                     self.model.generate_content_async(

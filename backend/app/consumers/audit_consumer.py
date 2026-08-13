@@ -78,12 +78,7 @@ async def consume_events() -> None:
                     except ValueError:
                         logger.warning(f"Invalid UUID format for event_id: {event_id_str}")
 
-                # Insert into DB — idempotent when event_id is present.
-                # Failure mode this prevents: if the consumer crashes after writing
-                # to Postgres but before Kafka commits the offset, the message is
-                # redelivered on restart.  Without deduplication, that creates a
-                # duplicate audit row (inflating metrics, corrupting audit trail).
-                # ON CONFLICT (event_id) DO NOTHING silently skips the duplicate.
+                # ON CONFLICT (event_id) DO NOTHING handles offset replay after consumer crash.
                 async with SessionLocal() as session:
                     if event_id:
                         stmt = pg_insert(AuditLog).values(

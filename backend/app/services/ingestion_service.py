@@ -161,9 +161,7 @@ async def discover_live_schema(session: AsyncSession, schema_name: str) -> Dict[
     Discover all tables, columns, data types, primary keys, and foreign keys in schema_name from information_schema.
     Returns a complete, structured dictionary and formatted string representation for RAG and LLM grounding.
     """
-    # schema_name is stored in DatabaseConnection at upload time.
-    # PostgreSQL silently truncates unquoted identifiers to 63 chars,
-    # so we must match that truncation here when using it as a bound parameter.
+    # PG truncates unquoted identifiers to 63 chars; match that here.
     safe_schema = schema_name.strip()[:63] if schema_name else ""
 
     logger.info(f"[SCHEMA DISCOVERY] Querying information_schema for schema='{safe_schema}'")
@@ -189,12 +187,7 @@ async def discover_live_schema(session: AsyncSession, schema_name: str) -> Dict[
             f"[SCHEMA DISCOVERY] No tables found for schema='{safe_schema}'. "
             f"Attempting fallback: scanning all user_* schemas in PostgreSQL..."
         )
-        # Fallback strategy:
-        # 1. List ALL user_* schemas in the database.
-        # 2. For each, check if it has BASE TABLE rows.
-        # 3. Pick the first one whose name shares the longest common prefix with safe_schema.
-        # This handles legacy schema names that were created with a different sanitisation
-        # rule than what is now stored in DatabaseConnection.
+        # Fallback: find the user_* schema with the longest hex-prefix match.
         try:
             all_schemas_result = await session.execute(
                 text("""
@@ -455,7 +448,6 @@ async def execute_pg_query(
         data = [dict(zip(columns, row)) for row in rows]
         latency = time.time() - start
 
-        # Convert non-serializable types
         for row_dict in data:
             for key, val in row_dict.items():
                 if hasattr(val, "isoformat"):

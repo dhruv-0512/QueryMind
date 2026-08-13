@@ -1,20 +1,7 @@
 """
 Circuit breaker for external API calls (Gemini LLM).
 
-Failure mode this prevents:
-  If the Gemini API is down or rate-limited, every incoming query would block
-  for the full 25-second timeout before failing.  With 10 concurrent users,
-  that's 10 worker threads stuck waiting — effectively a self-inflicted
-  denial-of-service on your own backend.  The circuit breaker detects
-  consecutive failures and starts failing fast (<1 ms) with a clear 503,
-  keeping the server responsive for cached queries, file uploads, and other
-  non-Gemini endpoints.
-
-State machine:
-  CLOSED    → normal operation; failures are counted
-  OPEN      → tripped after N consecutive failures; all calls rejected instantly
-  HALF_OPEN → after recovery_timeout, ONE trial request is allowed through
-              success → CLOSED,  failure → back to OPEN
+States: CLOSED (normal) → OPEN (fail-fast after N failures) → HALF_OPEN (one trial) → CLOSED
 """
 
 import time
@@ -32,23 +19,12 @@ class CircuitState(Enum):
 
 
 class CircuitOpenError(Exception):
-    """Raised when the circuit breaker is OPEN and rejects a call (fail-fast)."""
+    """Raised when the circuit breaker is OPEN (fail-fast)."""
     pass
 
 
 class CircuitBreaker:
-    """
-    Async-safe circuit breaker with CLOSED → OPEN → HALF_OPEN states.
-
-    Interview explanation:
-      "I wrap the Gemini API call in a circuit breaker.  If 5 calls in a row
-       fail (timeout, 5xx, network error), the breaker *opens* and every
-       subsequent request is rejected instantly with a 503 — no 25-second
-       wait, no wasted Gemini quota.  After 30 seconds the breaker moves to
-       *half-open* and lets exactly one probe request through.  If that
-       succeeds, we're back to normal.  If it fails, we stay open for
-       another 30 seconds."
-    """
+    """Async-safe circuit breaker with CLOSED → OPEN → HALF_OPEN states."""
 
     def __init__(
         self,
@@ -63,11 +39,8 @@ class CircuitBreaker:
         self._state = CircuitState.CLOSED
         self._failure_count = 0
         self._last_failure_time: float = 0.0
-        # Lock serialises state transitions — the actual API call runs
-        # outside the lock so it never blocks other requests.
+        # Lock serialises state transitions; actual API call runs outside the lock.
         self._lock = asyncio.Lock()
-
-    # -- state property auto-transitions OPEN → HALF_OPEN after timeout ------
 
     @property
     def state(self) -> CircuitState:
@@ -78,17 +51,13 @@ class CircuitBreaker:
             self._state = CircuitState.HALF_OPEN
         return self._state
 
-    # -- public API -----------------------------------------------------------
-
     async def call(self, coro):
         """
         Execute an awaitable through the circuit breaker.
 
-        Raises CircuitOpenError immediately if the circuit is OPEN (fail-fast).
-        On success the breaker resets to CLOSED.
-        On failure the breaker increments the failure counter and may trip.
+        Raises CircuitOpenError immediately if the circuit is OPEN.
+        Resets to CLOSED on success; increments failure count and may trip on failure.
         """
-        # --- Pre-flight check (under lock) ---
         async with self._lock:
             current_state = self.state
 
@@ -107,23 +76,17 @@ class CircuitBreaker:
                 )
 
             if current_state == CircuitState.HALF_OPEN:
-                # Allow exactly ONE trial request.  Set state to OPEN *now*
-                # so concurrent requests that arrive while the trial is
-                # in-flight still fail fast instead of flooding the degraded
-                # service.  Also bump _last_failure_time to prevent the
-                # state-property from immediately re-transitioning to
-                # HALF_OPEN.
+                # Allow one trial; set OPEN now so concurrent requests still fail fast.
+                # Bump _last_failure_time so the state property doesn't re-transition immediately.
                 self._state = CircuitState.OPEN
                 self._last_failure_time = time.time()
                 logger.info(
                     f"[{self.name}] HALF_OPEN → sending one probe request"
                 )
 
-        # --- Execute the actual call OUTSIDE the lock ---
         try:
             result = await coro
         except Exception as exc:
-            # Record failure
             async with self._lock:
                 self._failure_count += 1
                 self._last_failure_time = time.time()
@@ -134,7 +97,6 @@ class CircuitBreaker:
                 )
             raise
 
-        # --- Success — reset to CLOSED ---
         async with self._lock:
             prev_failures = self._failure_count
             self._state = CircuitState.CLOSED
