@@ -41,8 +41,8 @@ Ask questions in plain English and get instant SQL results against your uploaded
 
 | Service | Port | Purpose |
 |---------|------|---------|
-| **Frontend** | 3000 | React 19 + Vite + Tailwind CSS 3 (Multi-datasource selection UI) |
-| **Backend** | 8000 | FastAPI (Python 3.12), NL→SQL pipeline, FK Graph Relationship Service |
+| **Frontend** | 3000 | React 19 + Vite + Tailwind CSS 3 (Multi-datasource Dashboard & Workspace UI) |
+| **Backend** | 8000 | FastAPI (Python 3.12), NL→SQL pipeline, Deterministic Relationship Engine |
 | **PostgreSQL** | 5432 | Temp schemas `user_{uid}_{db_id}`, metadata, audit, multi-schema search_path |
 | **Redis** | 6379 | Query cache, refresh tokens, rate limiting |
 | **Kafka** | 9092 | Event streaming (audit, auth, query, schema events) |
@@ -68,16 +68,18 @@ Open **http://localhost:3000** — register an account and start querying.
 
 ## Key Features & Multi-Table Engine
 
+- **Deterministic 5-Step Viva-Ready Relationship Engine**: Automatically infers Foreign Key links (`orders.customer_id` $\rightarrow$ `customers.id`, `order_items.product_id` $\rightarrow$ `products.id`) using a 5-step explainable strategy (`*_id`/`*_key`/`*_uuid` pattern, table stem matching, target key check, datatype compatibility, $\ge 80\%$ value containment).
+- **Attribute Column Exclusion**: Explicitly rejects generic attribute columns (`created_at`, `prospect_company`, `contact_emails`, `contact_mobile_phone`, `full_name`) to eliminate false positives.
+- **User Relationship Confirmation Modal**: Displays detected relationship candidates with human-readable explanations (`97% of source values match target key`) and check/confirm controls.
+- **Dashboard & Workspace Multi-File Selection**: Select multiple database files directly on the home page (`Dashboard.jsx`) or workspace (`QueryWorkspace.jsx`) and click `Query Selected (N)`.
 - **Multi-Table & Cross-Table SQL Generation**: Full support for `INNER JOIN`, `LEFT JOIN`, self-joins, junction tables, `HAVING`, and `WITH` (CTE) clauses.
-- **FK Graph Relationship Traversal**: Automatically builds bidirectional Foreign Key graphs (`RelationshipService`) and performs BFS traversal to retrieve all connected table DDLs when generating multi-table queries.
-- **Multi-Datasource Selection UI**: Select single or multiple uploaded database files simultaneously in the frontend workspace.
+- **FK Graph Relationship Traversal**: Automatically builds bidirectional Foreign Key graphs (`RelationshipService`) and performs BFS traversal to retrieve connected table DDLs.
 - **Multi-Schema Execution**: Queries spanning multiple uploaded datasources are qualified with per-table schema identifiers (`"user_schema_1"."table_a" JOIN "user_schema_2"."table_b"`) and executed safely with unified PostgreSQL `search_path` mapping.
-- **Curated Multi-Table Example Dataset**: Seeding pipeline ingests 2,500+ diverse question-SQL examples sourced directly from **Spider** and **WikiSQL** with 700+ JOIN templates stratified by depth (2-table, 3-table, 4-table/complex joins), `LEFT JOIN`, CTEs, and `HAVING` filters.
-- **AST Schema Grounding & Recovery**: Uses `sqlglot` to parse generated SQL ASTs, enforcing valid table and column references, catching schema hallucinations, and recovering automatically via fuzzy matching.
+- **Curated Example Dataset**: Seeding pipeline ingests 2,500+ diverse question-SQL examples sourced directly from **Spider** and **WikiSQL**.
 
 ## Upload Formats
 
-Drag-and-drop upload of data files. Supported formats:
+Supported drag-and-drop formats:
 
 | Format | Extension |
 |--------|-----------|
@@ -85,19 +87,17 @@ Drag-and-drop upload of data files. Supported formats:
 | Excel | `.xlsx`, `.xls` |
 | JSON | `.json` |
 
-On upload, the system:
-1. Parses the file with **Pandas** (auto-detects column names & types, normalizes special characters & numeric column titles)
-2. Creates a **temporary PostgreSQL schema** named `user_{user_id}_{db_id}`
-3. Loads the data using **PostgreSQL COPY protocol** via asyncpg for maximum speed
-4. Extracts the **DDL and Foreign Keys** and generates **vector embeddings** in ChromaDB
-5. Tables and relationships are indexed for RAG-assisted SQL generation with curated example retrieval
+On upload:
+1. Parses file with **Pandas** (auto-detects column names & types, normalizes special characters & numeric column titles)
+2. Loads data into **PostgreSQL schema** (`user_{user_id}_{db_id}`) using asyncpg COPY protocol
+3. Extracts DDL and indexes embeddings in **ChromaDB**
 
 ## Benchmark & Evaluation
 
-QueryMind includes two automated evaluation harnesses built on independent benchmarks:
+QueryMind includes two automated evaluation harnesses:
 
 1. **Standard Unseen Paraphrase Benchmark (`evaluation/evaluate.py`)**: Tests NL paraphrasing, schema grounding, and read-only security.
-2. **Multi-Table Benchmark (`evaluation/evaluate_multitable.py`)**: Tests 2-table, 3-table, and 4-table JOINs, `LEFT JOIN`s, `CTE`s, `HAVING` clauses, and aggregations against the 6-table aviation database (`airlines`, `airports`, `aircraft`, `flights`, `passengers`, `bookings`).
+2. **Multi-Table Benchmark (`evaluation/evaluate_multitable.py`)**: Tests 2-table, 3-table, and 4-table JOINs, `LEFT JOIN`s, `CTE`s, `HAVING` clauses, and aggregations against the 6-table aviation database.
 
 ### Benchmark Metrics Summary
 
@@ -114,14 +114,7 @@ QueryMind includes two automated evaluation harnesses built on independent bench
 | **Multi-Table Benchmark** | **CTE (`WITH ...`) Accuracy** | **`100.0%`** | `> 75.0%` | **PASSED** |
 | **Multi-Table Benchmark** | **Overall Multi-Table Accuracy** | **`100.0%`** | `> 80.0%` | **PASSED** |
 
-### Visual Evidence & Latency Charts
-
-<p align="center">
-  <img src="evaluation/results/accuracy_chart.png" width="45%" alt="Accuracy Chart" />
-  <img src="evaluation/results/latency_chart.png" width="45%" alt="Latency Chart" />
-</p>
-
-To run the evaluation harnesses locally:
+### Running Benchmark Harnesses Locally
 
 ```bash
 # Run standard baseline evaluation
@@ -131,34 +124,31 @@ python evaluation/evaluate.py
 python evaluation/evaluate_multitable.py
 ```
 
-All evaluation artifacts, benchmark markdown reports, and JSON metrics are stored in [`evaluation/results/`](file:///C:/Users/dhruv/Desktop/PROJECTS/New%20folder%20%287%29/evaluation/results).
+All benchmark markdown reports and JSON metrics are stored in [`evaluation/results/`](file:///C:/Users/dhruv/Desktop/PROJECTS/New%20folder%20%287%29/evaluation/results).
 
 ## How It Works: Multi-File Upload & Cross-Table PostgreSQL Engine
 
-1. **Multi-File Upload & Ingestion**:
-   - Upload any number of data files (`.csv`, `.xlsx`, `.json`) — e.g. `customers.csv`, `orders.csv`, `products.json`.
-   - Each file is converted into a native PostgreSQL table inside an isolated PostgreSQL schema (`user_{uid}_{db_id}`) using `asyncpg` COPY protocol for sub-second ingestion.
-2. **Multi-Datasource Selection**:
-   - In the **Query Workspace**, select one or multiple uploaded databases from the Data Sources panel using checkboxes.
-3. **Unified Multi-Schema Discovery**:
-   - When you click **Run Query**, QueryMind discovers the live PostgreSQL schemas for all selected files in parallel.
-   - It constructs a unified multi-table context, extracting column names, data types, and Foreign Key relationships.
-4. **Relationship-Aware RAG Retrieval & Prompting**:
-   - Searches ChromaDB for relevant tables and uses BFS graph traversal ([`RelationshipService`](file:///C:/Users/dhruv/Desktop/PROJECTS/New%20folder%20(7)/backend/app/services/relationship_service.py)) to pull in transitively connected FK table schemas.
-   - Retrieves top matching structural templates from the 2,500+ Spider & WikiSQL corpus.
-   - Injects the merged schema, relationship map, and guidelines into DeepSeek AI (or Gemini).
-5. **Cross-Schema PostgreSQL Qualification & JOIN Execution**:
-   - The LLM generates standard ANSI SQL JOINs across tables (e.g. `FROM customers c JOIN orders o ON c.id = o.customer_id`).
-   - QueryMind's AST qualification engine ([`_qualify_sql_tables`](file:///C:/Users/dhruv/Desktop/PROJECTS/New%20folder%20(7)/backend/app/routers/query.py#L30-L61)) maps each table to its respective PostgreSQL schema:
-     ```sql
-     SELECT c.name, SUM(o.total_amount) AS revenue
-     FROM "user_a1b2_db1"."customers" c
-     JOIN "user_a1b2_db2"."orders" o ON c.id = o.customer_id
-     GROUP BY c.name;
-     ```
-   - Sets PostgreSQL `search_path` dynamically to include all selected schemas and executes the query directly in PostgreSQL.
-6. **AST Validation & Recovery**: Parses the generated SQL with `sqlglot` to prevent schema hallucinations and handles schema recovery automatically.
-7. **Caching & Idempotent Audit**: Caches results in Redis (300s TTL) and logs asynchronous audit events to Apache Kafka.
+```text
+Upload CSVs
+     ↓
+Schema profiling
+     ↓
+Deterministic 5-Step Relationship Inference (*_id pattern, datatype, ≥80% value containment)
+     ↓
+Candidate relationships shown in Modal UI
+     ↓
+User confirmation
+     ↓
+Relationship Graph & BFS expansion
+     ↓
+Relationship-aware ChromaDB RAG
+     ↓
+DeepSeek / Gemini SQL generation
+     ↓
+sqlglot AST validation
+     ↓
+Cross-schema PostgreSQL execution (search_path)
+```
 
 ## Environment Variables
 
