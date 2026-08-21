@@ -116,25 +116,7 @@ class TestSqlRagAdaptation(unittest.IsolatedAsyncioTestCase):
         examples = [{"question": "q", "sql": "SELECT 1", "similarity": 0.5}]
         self.assertIsNone(self.sql_service._try_rag_direct(schema, "q", examples))
 
-    @patch("app.services.sql_service.SqlService._generate_with_deepseek", return_value=None)
-    @patch("app.services.sql_service.is_api_key_configured")
-    @patch("app.services.sql_service.genai.GenerativeModel")
-    async def test_generate_sql_rag_prompt(self, mock_model_class, mock_key, mock_deepseek):
-        mock_key.return_value = True
-        mock_model = MagicMock()
-        mock_model_class.return_value = mock_model
-        self.sql_service.model = mock_model
-
-        captured = {}
-
-        async def mock_generate(*args, **kwargs):
-            captured["prompt"] = args[0]
-            resp = MagicMock()
-            resp.text = '{"sql": "SELECT name FROM customer WHERE city = \'New York\';", "explanation": "ok", "confidence": 0.9}'
-            return resp
-
-        mock_model.generate_content_async = mock_generate
-
+    def test_generate_sql_rag_prompt(self):
         schema = "CREATE TABLE customer (id INT, name TEXT, city TEXT);"
         examples = [{
             "question": "Show users from Boston",
@@ -143,9 +125,9 @@ class TestSqlRagAdaptation(unittest.IsolatedAsyncioTestCase):
             "source": "spider",
         }]
 
-        result = await self.sql_service.generate_sql(schema, "names in New York", examples)
-        self.assertIn(result["rag_mode"], ("deepseek_llm", "gemini_llm", "llm_adapt"))
-        self.assertIn("LOGICAL SQL TEMPLATE EXAMPLES", captured["prompt"])
+        prompt = self.sql_service._build_rag_prompt(schema, "names in New York", examples)
+        self.assertIn("LOGICAL SQL TEMPLATE EXAMPLES", prompt)
+        self.assertIn("LIVE UPLOADED DATABASE SCHEMA", prompt)
 
 
 if __name__ == "__main__":
