@@ -1,6 +1,6 @@
 # QueryMind — Natural Language to SQL Platform
 
-🚀 **Live Demo**: [https://query-mind-brown.vercel.app/](https://query-mind-brown.vercel.app/)
+**Live Demo**: [https://query-mind-brown.vercel.app/](https://query-mind-brown.vercel.app/)
 
 Ask questions in plain English and get instant SQL results against your uploaded data.
 
