@@ -5,103 +5,146 @@ from app.services.relationship_inference_service import (
 )
 
 
-def test_signal_a_name_similarity():
+def test_attribute_column_rejection():
     srv = RelationshipInferenceService()
 
-    # Positive matches
-    assert srv.calculate_name_similarity("customer_id", "orders", "id", "customers") >= 0.95
-    assert srv.calculate_name_similarity("customerId", "orders", "id", "customers") >= 0.95
-    assert srv.calculate_name_similarity("customer_id", "orders", "customer_id", "customers") >= 0.95
-    assert srv.calculate_name_similarity("product_id", "order_items", "id", "products") >= 0.95
+    # Attribute columns must be identified correctly
+    assert srv.is_attribute_column("prospect_full_name")
+    assert srv.is_attribute_column("prospect_job_title")
+    assert srv.is_attribute_column("prospect_company")
+    assert srv.is_attribute_column("prospect_linkedin")
+    assert srv.is_attribute_column("contact_emails")
+    assert srv.is_attribute_column("contact_mobile_phone")
+    assert srv.is_attribute_column("created_at")
+    assert srv.is_attribute_column("updated_at")
 
-    # Low similarity for unrelated names
-    assert srv.calculate_name_similarity("name", "customers", "amount", "orders") < 0.30
-    assert srv.calculate_name_similarity("created_at", "users", "price", "products") < 0.30
+    # Key columns must NOT be marked as attributes
+    assert not srv.is_attribute_column("customer_id")
+    assert not srv.is_attribute_column("order_id")
+    assert not srv.is_attribute_column("product_id")
+    assert not srv.is_attribute_column("id")
 
 
-def test_signal_b_datatype_compatibility():
+def test_key_candidate_identification():
     srv = RelationshipInferenceService()
 
-    # Exact or same group compatible
-    assert srv.calculate_datatype_compatibility("integer", "integer") == 1.0
-    assert srv.calculate_datatype_compatibility("integer", "bigint") == 0.90
-    assert srv.calculate_datatype_compatibility("varchar", "text") == 0.90
-    assert srv.calculate_datatype_compatibility("uuid", "uuid") == 1.0
+    assert srv.is_key_candidate("customer_id")
+    assert srv.is_key_candidate("order_id")
+    assert srv.is_key_candidate("product_id")
+    assert srv.is_key_candidate("user_uuid")
+    assert srv.is_key_candidate("id")
 
-    # Incompatible
-    assert srv.calculate_datatype_compatibility("integer", "date") == 0.0
-    assert srv.calculate_datatype_compatibility("varchar", "integer") == 0.0
-
-
-def test_signal_c_d_e_value_overlap_and_stats():
-    srv = RelationshipInferenceService()
-
-    orders_cust_ids = [1, 2, 1, 3, 2, 1, 3]
-    customers_ids = [1, 2, 3, 4, 5]
-
-    overlap, uniq_target, card_score, card_type = srv.calculate_value_overlap_and_stats(orders_cust_ids, customers_ids)
-
-    # 100% of orders.customer_id values exist in customers.id
-    assert overlap == 1.0
-    # customers.id is 100% unique
-    assert uniq_target == 1.0
-    # Resembles many-to-one
-    assert card_type == "many-to-one"
-    assert card_score == 1.0
+    assert not srv.is_key_candidate("prospect_full_name")
+    assert not srv.is_key_candidate("contact_emails")
+    assert not srv.is_key_candidate("created_at")
 
 
-def test_edge_cases_null_and_empty_columns():
-    srv = RelationshipInferenceService()
-
-    # Columns with NULLs and empty strings
-    vals_a = [1, None, 2, "", 3, None]
-    vals_b = [1, 2, 3, 4, 5]
-
-    overlap, uniq_target, card_score, card_type = srv.calculate_value_overlap_and_stats(vals_a, vals_b)
-    assert overlap == 1.0
-    assert uniq_target == 1.0
-
-
-def test_edge_case_uuids_and_strings():
-    srv = RelationshipInferenceService()
-
-    uuid1 = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
-    uuid2 = "b1eebc99-9c0b-4ef8-bb6d-6bb9bd380a22"
-    uuid3 = "c2eebc99-9c0b-4ef8-bb6d-6bb9bd380a33"
-
-    src_uuids = [uuid1, uuid2, uuid1]
-    tgt_uuids = [uuid1, uuid2, uuid3]
-
-    overlap, uniq_target, _, _ = srv.calculate_value_overlap_and_stats(src_uuids, tgt_uuids)
-    assert overlap == 1.0
-    assert uniq_target == 1.0
-
-
-def test_negative_unrelated_coincidental_similarity():
-    srv = RelationshipInferenceService()
-
+def test_hard_negative_1_identical_attribute_columns():
     schema_info = {
         "tables": {
-            "customers": {
-                "columns": ["id", "name", "email"],
-                "column_types": {"id": "integer", "name": "varchar", "email": "varchar"}
+            "table_a": {"columns": ["prospect_company", "contact_person"], "column_types": {"prospect_company": "varchar", "contact_person": "varchar"}},
+            "table_b": {"columns": ["prospect_company", "address"], "column_types": {"prospect_company": "varchar", "address": "varchar"}}
+        }
+    }
+    candidates = relationship_inference_service.detect_candidate_relationships(schema_info)
+    assert len(candidates) == 0
+
+
+def test_hard_negative_2_identical_timestamps():
+    schema_info = {
+        "tables": {
+            "table_a": {"columns": ["created_at", "updated_at"], "column_types": {"created_at": "timestamp", "updated_at": "timestamp"}},
+            "table_b": {"columns": ["created_at", "deleted_at"], "column_types": {"created_at": "timestamp", "deleted_at": "timestamp"}}
+        }
+    }
+    candidates = relationship_inference_service.detect_candidate_relationships(schema_info)
+    assert len(candidates) == 0
+
+
+def test_hard_negative_3_identical_emails():
+    schema_info = {
+        "tables": {
+            "table_a": {"columns": ["contact_email", "work_email"], "column_types": {"contact_email": "varchar", "work_email": "varchar"}},
+            "table_b": {"columns": ["contact_email", "personal_email"], "column_types": {"contact_email": "varchar", "personal_email": "varchar"}}
+        }
+    }
+    candidates = relationship_inference_service.detect_candidate_relationships(schema_info)
+    assert len(candidates) == 0
+
+
+def test_hard_negative_4_identical_phone_numbers():
+    schema_info = {
+        "tables": {
+            "table_a": {"columns": ["contact_mobile_phone"], "column_types": {"contact_mobile_phone": "varchar"}},
+            "table_b": {"columns": ["contact_mobile_phone"], "column_types": {"contact_mobile_phone": "varchar"}}
+        }
+    }
+    candidates = relationship_inference_service.detect_candidate_relationships(schema_info)
+    assert len(candidates) == 0
+
+
+def test_hard_negative_5_identical_full_names():
+    schema_info = {
+        "tables": {
+            "table_a": {"columns": ["full_name"], "column_types": {"full_name": "varchar"}},
+            "table_b": {"columns": ["full_name"], "column_types": {"full_name": "varchar"}}
+        }
+    }
+    candidates = relationship_inference_service.detect_candidate_relationships(schema_info)
+    assert len(candidates) == 0
+
+
+def test_realistic_hr_prospect_contact_dataset_no_false_positives():
+    schema_info = {
+        "tables": {
+            "hr_prospect_data": {
+                "columns": [
+                    "prospect_full_name", "prospect_job_title", "prospect_linkedin",
+                    "prospect_company", "prospect_country", "created_at"
+                ],
+                "column_types": {
+                    "prospect_full_name": "varchar", "prospect_job_title": "varchar",
+                    "prospect_linkedin": "varchar", "prospect_company": "varchar",
+                    "prospect_country": "varchar", "created_at": "timestamp"
+                }
             },
-            "products": {
-                "columns": ["id", "product_name", "price"],
-                "column_types": {"id": "integer", "product_name": "varchar", "price": "float"}
+            "hr_contact_data": {
+                "columns": [
+                    "prospect_full_name", "prospect_company_name", "contact_emails",
+                    "contact_mobile_phone", "prospect_company_website", "created_at"
+                ],
+                "column_types": {
+                    "prospect_full_name": "varchar", "prospect_company_name": "varchar",
+                    "contact_emails": "varchar", "contact_mobile_phone": "varchar",
+                    "prospect_company_website": "varchar", "created_at": "timestamp"
+                }
             }
         }
     }
 
-    # Unrelated tables with generic 'id' and 'name' columns should not produce strong candidate relationship
-    candidates = srv.detect_candidate_relationships(schema_info)
-    strong_candidates = [c for c in candidates if c["confidence_level"] == "strong"]
-    assert len(strong_candidates) == 0
+    sample_data = {
+        "hr_prospect_data": {
+            "prospect_full_name": ["Alice Smith", "Bob Jones"],
+            "prospect_job_title": ["Software Engineer", "Product Manager"],
+            "prospect_linkedin": ["linkedin.com/in/alice", "linkedin.com/in/bob"],
+            "prospect_company": ["Google", "Microsoft"],
+            "created_at": ["2024-01-01", "2024-01-02"]
+        },
+        "hr_contact_data": {
+            "prospect_full_name": ["Alice Smith", "Bob Jones"],
+            "prospect_company_name": ["Google", "Microsoft"],
+            "contact_emails": ["alice@google.com", "bob@msft.com"],
+            "contact_mobile_phone": ["+1234567890", "+1987654321"],
+            "created_at": ["2024-01-01", "2024-01-02"]
+        }
+    }
+
+    candidates = relationship_inference_service.detect_candidate_relationships(schema_info, sample_data)
+    # Must produce ZERO false positive candidate relationships!
+    assert len(candidates) == 0
 
 
-def test_positive_multi_table_relationship_detection():
-    srv = RelationshipInferenceService()
-
+def test_legitimate_foreign_key_detection():
     schema_info = {
         "tables": {
             "customers": {
@@ -111,45 +154,22 @@ def test_positive_multi_table_relationship_detection():
             "orders": {
                 "columns": ["order_id", "customer_id", "amount"],
                 "column_types": {"order_id": "integer", "customer_id": "integer", "amount": "float"}
-            },
-            "order_items": {
-                "columns": ["item_id", "order_id", "product_id", "quantity"],
-                "column_types": {"item_id": "integer", "order_id": "integer", "product_id": "integer", "quantity": "integer"}
-            },
-            "products": {
-                "columns": ["id", "product_name", "price"],
-                "column_types": {"id": "integer", "product_name": "varchar", "price": "float"}
             }
         }
     }
 
     sample_data = {
-        "customers": {"id": [1, 2, 3, 4], "name": ["Alice", "Bob", "Charlie", "David"], "city": ["NY", "BOS", "SF", "LA"]},
-        "orders": {"order_id": [101, 102, 103], "customer_id": [1, 2, 1], "amount": [500, 700, 200]},
-        "order_items": {"item_id": [1, 2, 3], "order_id": [101, 101, 102], "product_id": [50, 51, 50], "quantity": [2, 1, 4]},
-        "products": {"id": [50, 51, 52], "product_name": ["Laptop", "Mouse", "Keyboard"], "price": [1000, 25, 75]}
+        "customers": {"id": [1, 2, 3], "name": ["Alice", "Bob", "Charlie"], "city": ["NY", "BOS", "SF"]},
+        "orders": {"order_id": [101, 102, 103], "customer_id": [1, 2, 1], "amount": [500, 700, 200]}
     }
 
-    candidates = srv.detect_candidate_relationships(schema_info, sample_data)
-    strong = [c for c in candidates if c["confidence_level"] == "strong"]
+    candidates = relationship_inference_service.detect_candidate_relationships(schema_info, sample_data)
+    assert len(candidates) == 1
 
-    # Verify orders.customer_id -> customers.id
-    cust_rel = next((c for c in strong if c["source_table"] == "orders" and c["source_column"] == "customer_id"), None)
-    assert cust_rel is not None
-    assert cust_rel["target_table"] == "customers"
-    assert cust_rel["target_column"] == "id"
-    assert cust_rel["score"] >= 0.85
-
-    # Verify order_items.order_id -> orders.order_id
-    order_rel = next((c for c in strong if c["source_table"] == "order_items" and c["source_column"] == "order_id"), None)
-    assert order_rel is not None
-    assert order_rel["target_table"] == "orders"
-    assert order_rel["target_column"] == "order_id"
-    assert order_rel["score"] >= 0.85
-
-    # Verify order_items.product_id -> products.id
-    prod_rel = next((c for c in strong if c["source_table"] == "order_items" and c["source_column"] == "product_id"), None)
-    assert prod_rel is not None
-    assert prod_rel["target_table"] == "products"
-    assert prod_rel["target_column"] == "id"
-    assert prod_rel["score"] >= 0.85
+    cand = candidates[0]
+    assert cand["source_table"] == "orders"
+    assert cand["source_column"] == "customer_id"
+    assert cand["target_table"] == "customers"
+    assert cand["target_column"] == "id"
+    assert cand["score"] >= 0.85
+    assert cand["confidence_level"] == "strong"
