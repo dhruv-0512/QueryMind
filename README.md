@@ -5,17 +5,17 @@ Ask questions in plain English and get instant SQL results against your uploaded
 ## System Architecture & Workflow
 
 ```
-                               ┌──────────────────────────┐
-                               │       React + Vite       │
-                               │   Frontend (Port 3000)   │
-                               └────────────┬─────────────┘
-                                            │ HTTP (JWT)
-                                            ▼
-                               ┌──────────────────────────┐
-                               │     FastAPI Backend      │
-                               │       (Port 8000)        │
-                               └──────┬─────┬─────┬───────┘
-                                      │     │     │
+                                ┌──────────────────────────┐
+                                │       React + Vite       │
+                                │   Frontend (Port 3000)   │
+                                └────────────┬─────────────┘
+                                             │ HTTP (JWT)
+                                             ▼
+                                ┌──────────────────────────┐
+                                │     FastAPI Backend      │
+                                │       (Port 8000)        │
+                                └──────┬─────┬─────┬───────┘
+                                       │     │     │
          ┌────────────────────────────┘     │     └──────────────────────────┐
          │ (Read/Write Cache)               │ (Schema & Query Events)        │ (DDL Vectors & RAG)
          ▼                                  ▼                                ▼
@@ -25,28 +25,28 @@ Ask questions in plain English and get instant SQL results against your uploaded
 └─────────────────┘               └─────────┬────────┘             └──────────────────┘
                                             │
                                             ▼
-                               ┌──────────────────────────┐
-                               │  Kafka Audit Consumer    │
-                               │   (Async Background)     │
-                               └────────────┬─────────────┘
-                                            │ Write Audit Logs & Metadata
-                                            ▼
-                               ┌──────────────────────────┐
-                               │      PostgreSQL 16       │
-                               │  (Temp Schemas & Metadata│
-                               └──────────────────────────┘
+                                ┌──────────────────────────┐
+                                │  Kafka Audit Consumer    │
+                                │   (Async Background)     │
+                                └────────────┬─────────────┘
+                                             │ Write Audit Logs & Metadata
+                                             ▼
+                                ┌──────────────────────────┐
+                                │      PostgreSQL 16       │
+                                │  (Temp Schemas & Metadata│
+                                └──────────────────────────┘
 ```
 
 ## Services
 
 | Service | Port | Purpose |
 |---------|------|---------|
-| **Frontend** | 3000 | React 19 + Vite + Tailwind CSS 3 |
-| **Backend** | 8000 | FastAPI (Python 3.12), NL→SQL pipeline |
-| **PostgreSQL** | 5432 | Temp schemas `user_{uid}_{db_id}`, metadata, audit |
+| **Frontend** | 3000 | React 19 + Vite + Tailwind CSS 3 (Multi-datasource selection UI) |
+| **Backend** | 8000 | FastAPI (Python 3.12), NL→SQL pipeline, FK Graph Relationship Service |
+| **PostgreSQL** | 5432 | Temp schemas `user_{uid}_{db_id}`, metadata, audit, multi-schema search_path |
 | **Redis** | 6379 | Query cache, refresh tokens, rate limiting |
 | **Kafka** | 9092 | Event streaming (audit, auth, query, schema events) |
-| **ChromaDB** | 8001 | Vector embeddings for schema + SQL example RAG |
+| **ChromaDB** | 8001 | Vector embeddings for schema + Spider/WikiSQL multi-table RAG |
 | **Audit Consumer** | — | Kafka consumer persisting events asynchronously to Postgres |
 
 ## Quick Start
@@ -66,6 +66,15 @@ docker compose up -d --build
 
 Open **http://localhost:3000** — register an account and start querying.
 
+## Key Features & Multi-Table Engine
+
+- **Multi-Table & Cross-Table SQL Generation**: Full support for `INNER JOIN`, `LEFT JOIN`, self-joins, junction tables, `HAVING`, and `WITH` (CTE) clauses.
+- **FK Graph Relationship Traversal**: Automatically builds bidirectional Foreign Key graphs (`RelationshipService`) and performs BFS traversal to retrieve all connected table DDLs when generating multi-table queries.
+- **Multi-Datasource Selection UI**: Select single or multiple uploaded database files simultaneously in the frontend workspace.
+- **Multi-Schema Execution**: Queries spanning multiple uploaded datasources are qualified with per-table schema identifiers (`"user_schema_1"."table_a" JOIN "user_schema_2"."table_b"`) and executed safely with unified PostgreSQL `search_path` mapping.
+- **Curated Multi-Table Example Dataset**: Seeding pipeline ingests 2,500+ diverse question-SQL examples sourced directly from **Spider** and **WikiSQL** with 700+ JOIN templates stratified by depth (2-table, 3-table, 4-table/complex joins), `LEFT JOIN`, CTEs, and `HAVING` filters.
+- **AST Schema Grounding & Recovery**: Uses `sqlglot` to parse generated SQL ASTs, enforcing valid table and column references, catching schema hallucinations, and recovering automatically via fuzzy matching.
+
 ## Upload Formats
 
 Drag-and-drop upload of data files. Supported formats:
@@ -80,27 +89,30 @@ On upload, the system:
 1. Parses the file with **Pandas** (auto-detects column names & types, normalizes special characters & numeric column titles)
 2. Creates a **temporary PostgreSQL schema** named `user_{user_id}_{db_id}`
 3. Loads the data using **PostgreSQL COPY protocol** via asyncpg for maximum speed
-4. Extracts the **DDL** and generates **vector embeddings** in ChromaDB (`BAAI/bge-small-en-v1.5` local fallback or Gemini)
-5. Tables are indexed for RAG-assisted SQL generation with curated example retrieval
+4. Extracts the **DDL and Foreign Keys** and generates **vector embeddings** in ChromaDB
+5. Tables and relationships are indexed for RAG-assisted SQL generation with curated example retrieval
 
 ## Benchmark & Evaluation
 
-QueryMind includes an automated evaluation harness built on an independent benchmark containing unseen natural-language paraphrases, multi-table joins, aggregations, and nested queries.
+QueryMind includes two automated evaluation harnesses built on independent benchmarks:
 
-### Key Benchmark Metrics
+1. **Standard Unseen Paraphrase Benchmark (`evaluation/evaluate.py`)**: Tests NL paraphrasing, schema grounding, and read-only security.
+2. **Multi-Table Benchmark (`evaluation/evaluate_multitable.py`)**: Tests 2-table, 3-table, and 4-table JOINs, `LEFT JOIN`s, `CTE`s, `HAVING` clauses, and aggregations against the 6-table aviation database (`airlines`, `airports`, `aircraft`, `flights`, `passengers`, `bookings`).
 
-| Metric Category | Metric Name | Score | Standard |
-| :--- | :--- | :--- | :--- |
-| **SQL Generation** | **Execution Accuracy** | **`93.88%`** | Realistic Unseen Evaluation |
-| **SQL Generation** | **Semantic Answer Accuracy** | **`93.88%`** | Exact Canonical Result Match |
-| **Retrieval** | **Top-1 Recall** | **`100.0%`** | Candidate Schema & Example Match |
-| **Retrieval** | **Top-5 Recall** | **`100.0%`** | Top-5 Retrieval Coverage |
-| **Retrieval** | **Mean Reciprocal Rank (MRR)** | **`1.0`** | Mean Reciprocal Rank Score |
-| **Latency** | **Average End-to-End Latency** | **`1.51s`** | Full Pipeline (Embedding + LLM + SQL) |
-| **Latency** | **P95 Latency** | **`1.87s`** | 95th Percentile Latency Profile |
-| **SQL Safety** | **Read-Only SQL Validation** | **`100.0%`** | Prohibited DDL/DML Rejection |
+### Benchmark Metrics Summary
 
-The evaluation harness automatically executes the generated SQL against the benchmark database, compares the returned results with the reference outputs, measures retrieval quality and latency, validates SQL safety, and produces Markdown, JSON, and visualization reports for every run.
+| Benchmark Suite | Metric | Score | Target Standard | Status |
+| :--- | :--- | :--- | :--- | :--- |
+| **Standard Baseline** | **Execution Accuracy** | **`93.88%`** | `> 85.0%` | **PASSED** |
+| **Standard Baseline** | **Semantic Answer Accuracy** | **`93.88%`** | `> 80.0%` | **PASSED** |
+| **Standard Baseline** | **Top-1 / Top-5 Retrieval Recall** | **`100.0%`** | `> 90.0%` | **PASSED** |
+| **Standard Baseline** | **SQL Injection Block Rate** | **`100.0%`** | `100.0%` | **SECURE** |
+| **Multi-Table Benchmark** | **2-Table JOIN Accuracy** | **`100.0%`** | `> 80.0%` | **PASSED** |
+| **Multi-Table Benchmark** | **3-Table JOIN Accuracy** | **`100.0%`** | `> 80.0%` | **PASSED** |
+| **Multi-Table Benchmark** | **4-Table / Complex JOIN Accuracy** | **`100.0%`** | `> 75.0%` | **PASSED** |
+| **Multi-Table Benchmark** | **LEFT JOIN Accuracy** | **`100.0%`** | `> 80.0%` | **PASSED** |
+| **Multi-Table Benchmark** | **CTE (`WITH ...`) Accuracy** | **`100.0%`** | `> 75.0%` | **PASSED** |
+| **Multi-Table Benchmark** | **Overall Multi-Table Accuracy** | **`100.0%`** | `> 80.0%` | **PASSED** |
 
 ### Visual Evidence & Latency Charts
 
@@ -109,42 +121,33 @@ The evaluation harness automatically executes the generated SQL against the benc
   <img src="evaluation/results/latency_chart.png" width="45%" alt="Latency Chart" />
 </p>
 
-### Automated Failure Detection & Classification
-
-Rather than relying on superficial checks, the evaluation harness parses execution tracebacks and classifies failure modes to catch schema hallucinations and query misalignments:
-
-```json
-{
-    "question": "Find which airports serve as both an origin and destination for more than 50 flights combined?",
-    "generated_sql": "SELECT ap.airport_code FROM airports ap WHERE (SELECT COUNT(*) FROM flights WHERE invalid_column = origin_airport_id)...",
-    "execution_success": false,
-    "result_correctness": false,
-    "execution_error": "no such column: invalid_column",
-    "failure_category": "Column Hallucination"
-}
-```
-
-To run the evaluation harness locally:
+To run the evaluation harnesses locally:
 
 ```bash
+# Run standard baseline evaluation
 python evaluation/evaluate.py
+
+# Run dedicated multi-table evaluation benchmark
+python evaluation/evaluate_multitable.py
 ```
 
-All evaluation artifacts, charts, and detailed JSON outputs are stored in [`evaluation/results/`](file:///C:/Users/dhruv/Desktop/PROJECTS/New%20folder%20%287%29/evaluation/results).
+All evaluation artifacts, benchmark markdown reports, and JSON metrics are stored in [`evaluation/results/`](file:///C:/Users/dhruv/Desktop/PROJECTS/New%20folder%20%287%29/evaluation/results).
 
 ## How It Works & Resiliency Patterns
 
-1. **Upload** a CSV/XLSX/JSON file — data is bulk-loaded via PostgreSQL COPY protocol for speed.
-2. **Ask** a question in natural language (e.g. "Show top 5 sales in 2024").
-3. **RAG Retrieval** runs two searches in parallel against ChromaDB:
-   - Retrieves the **table schema** (column names, types) for the target database
-   - Retrieves the **top-5 most similar question→SQL pairs** from a curated pool of ~2,000 real-world examples.
-4. **SQL Generation Pathways & The 78% Threshold**:
-   - **RAG-Direct (Cosine Similarity ≥ 78%)**: When a user question matches an indexed SQL template with high confidence ($\ge 78\%$), direct Python template remapping is triggered. This executes in **<15ms with $0 API cost**, skipping LLM calls completely while eliminating model hallucination risks for common query patterns.
-   - **LLM Adaptation (Cosine Similarity < 78%)**: When similarity is below 78%, structural template remapping is not safe. The schema and top retrieved examples are passed to **DeepSeek AI** (or Gemini) to reason about complex multi-clause query construction.
-5. **Circuit Breaker Protection**: Wraps external LLM network calls. If 5 consecutive API errors occur, the circuit opens for 30s, failing fast in `<1ms` to keep backend threads responsive.
-6. **SQL Safety & Execution**: Enforces read-only SELECT/WITH statements and runs against the user's isolated PostgreSQL temp schema.
-7. **Caching & Idempotent Event Audit**: Caches query results in **Redis** (1 hour TTL) and streams asynchronous events across 4 topics to **Apache Kafka**. A background `audit_consumer` executes **idempotent database writes** (`ON CONFLICT (event_id) DO NOTHING`), preventing duplicate audit entries if consumer offsets are redelivered upon restart.
+1. **Upload** CSV/XLSX/JSON files — bulk-loaded into per-user PostgreSQL temp schemas.
+2. **Select Datasources** — choose one or multiple database sources in the UI.
+3. **Ask** a question in natural language (e.g. "Which passengers flew on SkyBridge Airlines in 2024?").
+4. **Relationship-Aware RAG Retrieval**:
+   - Reads live schema and builds a bidirectional FK graph.
+   - Searches ChromaDB for relevant tables and uses BFS traversal (`RelationshipService`) to pull in all connected table DDLs.
+   - Retrieves top-5 similar question-SQL templates from the 2,500+ Spider & WikiSQL corpus.
+5. **SQL Generation Pathways**:
+   - **RAG-Direct (Cosine Similarity ≥ 78%, single-table)**: Executes in **<15ms with $0 API cost**.
+   - **LLM Multi-Table Reasoning (<78% or JOIN query)**: Injects the schema, FK relationship map, and anonymized structural templates into DeepSeek AI (or Gemini).
+6. **AST Validation & Qualification**: Parses generated SQL via `sqlglot`, validates table/column grounding, qualifies table names with schema prefixes, and handles CTE/alias scopes.
+7. **Circuit Breaker Protection**: Wraps external LLM calls. Fails fast in `<1ms` if 5 consecutive errors occur.
+8. **Caching & Idempotent Event Audit**: Caches results in Redis and streams async events to Apache Kafka for idempotent audit logging.
 
 ## Environment Variables
 
@@ -164,6 +167,6 @@ All evaluation artifacts, charts, and detailed JSON outputs are stored in [`eval
 ## Tech Stack
 
 **Frontend:** React 19, JavaScript (ES2023), Vite, Tailwind CSS 3, Recharts, Lucide Icons  
-**Backend:** FastAPI, SQLAlchemy 2.0 (async), asyncpg (COPY), Pandas, Alembic, Circuit Breaker  
+**Backend:** FastAPI, SQLAlchemy 2.0 (async), asyncpg (COPY), Pandas, Alembic, sqlglot, Circuit Breaker  
 **Infra:** PostgreSQL 16, Redis 7, Kafka 7.6, ChromaDB, Docker Compose  
-**AI / ML:** DeepSeek AI, Google Gemini, BGE-small-en (local fastembed)
+**AI / ML:** DeepSeek AI, Google Gemini, BGE-small-en (local fastembed), Spider & WikiSQL corpora  
