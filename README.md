@@ -2,7 +2,7 @@
 
 **Live Demo**: [https://query-mind-brown.vercel.app/](https://query-mind-brown.vercel.app/)
 
-Ask questions in plain English and get instant SQL results against your uploaded data.
+Ask questions in plain English and get validated SQL results against your uploaded datasets.
 
 ## System Architecture & Workflow
 
@@ -68,14 +68,16 @@ docker compose up -d --build
 
 ## Key Features & Multi-Table Engine
 
-- **Deterministic 5-Step Viva-Ready Relationship Engine**: Automatically infers Foreign Key links (`orders.customer_id` $\rightarrow$ `customers.id`, `order_items.product_id` $\rightarrow$ `products.id`) using a 5-step explainable strategy (`*_id`/`*_key`/`*_uuid` pattern, table stem matching, target key check, datatype compatibility, $\ge 80\%$ value containment).
-- **Attribute Column Exclusion**: Explicitly rejects generic attribute columns (`created_at`, `prospect_company`, `contact_emails`, `contact_mobile_phone`, `full_name`) to eliminate false positives.
-- **User Relationship Confirmation Modal**: Displays detected relationship candidates with human-readable explanations (`97% of source values match target key`) and check/confirm controls.
+- **Deterministic Foreign-Key Candidate Detection**: Identifies likely relationships between uploaded datasets using conventional foreign-key patterns (`*_id`, `*_key`, `*_uuid`), entity/table-name matching, target-key detection, datatype compatibility, and ≥80% value containment. Detected relationships are presented to the user for confirmation before being used for cross-table querying.
+- **Attribute Column Filtering**: Excludes generic descriptive columns such as `created_at`, `prospect_company`, `contact_emails`, `contact_mobile_phone`, `full_name`, and similar attributes from foreign-key candidate detection to reduce false positives.
+- **User Relationship Confirmation Modal**: Displays detected relationship candidates with confidence/validation information and human-readable explanations, allowing users to select and confirm relationships before cross-table querying.
 - **Dashboard & Workspace Multi-File Selection**: Select multiple database files directly on the home page (`Dashboard.jsx`) or workspace (`QueryWorkspace.jsx`) and click `Query Selected (N)`.
-- **Multi-Table & Cross-Table SQL Generation**: Full support for `INNER JOIN`, `LEFT JOIN`, self-joins, junction tables, `HAVING`, and `WITH` (CTE) clauses.
-- **FK Graph Relationship Traversal**: Automatically builds bidirectional Foreign Key graphs (`RelationshipService`) and performs BFS traversal to retrieve connected table DDLs.
+- **Multi-Table SQL Support**: Supports generated queries involving INNER JOIN, LEFT JOIN, self-joins, junction tables, HAVING, and WITH (CTE) clauses.
+- **Relationship Graph & BFS Traversal**: Builds a graph from known database foreign keys and user-confirmed relationships, then traverses connected tables to expand relevant schema context for multi-table querying.
 - **Multi-Schema Execution**: Queries spanning multiple uploaded datasources are qualified with per-table schema identifiers (`"user_schema_1"."table_a" JOIN "user_schema_2"."table_b"`) and executed safely with unified PostgreSQL `search_path` mapping.
 - **Curated Example Dataset**: Seeding pipeline ingests 2,500+ diverse question-SQL examples sourced directly from **Spider** and **WikiSQL**.
+
+> **Note on CSV Relationships**: CSV files do not inherently contain database foreign-key constraints. QueryMind therefore treats relationships detected from uploaded data as candidate relationships and requires user confirmation before using them for cross-dataset querying.
 
 ## Upload Formats
 
@@ -99,6 +101,20 @@ Evaluation harnesses and benchmark scripts are available under `evaluation/`:
 - **Standard Baseline (`evaluation/evaluate.py`)**: Evaluates NL paraphrasing, schema grounding, and SQL injection security.
 - **Multi-Table Benchmark (`evaluation/evaluate_multitable.py`)**: Tests 2-table, 3-table, and 4-table JOINs across multi-table schema relationships.
 
+### Evaluation Results
+
+| Evaluation | Result |
+|---|---:|
+| Standard baseline | 93.88% (46/49) |
+| Multi-table benchmark | 100% (43/43) |
+| 2-table JOINs | 100% (22/22) |
+| 3-table JOINs | 100% (18/18) |
+| 4-table JOINs | 100% (3/3) |
+| SQL injection blocking | 100% (4/4) |
+| Backend test suite | 38/38 |
+
+QueryMind achieved 100% execution accuracy on the 43-query multi-table benchmark. The multi-table benchmark evaluates queries requiring 2-, 3-, and 4-table joins across related relational schemas. The standard baseline evaluates schema grounding, natural-language query handling, and SQL security checks.
+
 To run evaluation scripts locally:
 
 ```bash
@@ -118,13 +134,13 @@ Upload CSVs
      ↓
 Schema profiling
      ↓
-Deterministic 5-Step Relationship Inference (*_id pattern, datatype, ≥80% value containment)
+Deterministic FK candidate detection
      ↓
-Candidate relationships shown in Modal UI
+Candidate relationships shown
      ↓
 User confirmation
      ↓
-Relationship Graph & BFS expansion
+Relationship graph & BFS expansion
      ↓
 Relationship-aware ChromaDB RAG
      ↓
@@ -132,8 +148,21 @@ DeepSeek / Gemini SQL generation
      ↓
 sqlglot AST validation
      ↓
-Cross-schema PostgreSQL execution (search_path)
+Cross-schema PostgreSQL execution
 ```
+
+1. Users upload one or more supported datasets.
+2. QueryMind profiles the uploaded schemas and loads the data into isolated PostgreSQL schemas.
+3. When multiple datasets are selected, the deterministic FK candidate detector searches for conventional foreign-key patterns such as `customer_id → customers.id`.
+4. Candidate relationships are verified using key-pattern matching, datatype compatibility, and source-to-target value containment.
+5. Detected candidates are shown to the user for confirmation.
+6. Confirmed relationships are added to the relationship graph.
+7. BFS traversal expands relevant connected table context.
+8. ChromaDB RAG retrieves relevant schema and SQL examples.
+9. DeepSeek/Gemini generates the SQL query.
+10. sqlglot validates the generated SQL AST.
+11. PostgreSQL executes the query across the selected schemas.
+12. Results are returned to the user.
 
 ## Environment Variables
 
