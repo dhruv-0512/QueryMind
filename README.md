@@ -66,8 +66,6 @@ LLM_PROVIDER=deepseek
 docker compose up -d --build
 ```
 
-Open **http://localhost:3000** — register an account and start querying.
-
 ## Key Features & Multi-Table Engine
 
 - **Deterministic 5-Step Viva-Ready Relationship Engine**: Automatically infers Foreign Key links (`orders.customer_id` $\rightarrow$ `customers.id`, `order_items.product_id` $\rightarrow$ `products.id`) using a 5-step explainable strategy (`*_id`/`*_key`/`*_uuid` pattern, table stem matching, target key check, datatype compatibility, $\ge 80\%$ value containment).
