@@ -4,7 +4,10 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from typing import List
+import asyncio
+from typing import List, Optional
+from pydantic import BaseModel
+from app.services.relationship_inference_service import relationship_inference_service
 
 from app.database import get_db
 from app.models.user import User
@@ -213,3 +216,51 @@ async def delete_database(
     )
 
     return {"detail": f"Database '{db_name}' deleted successfully."}
+
+
+class DetectRelationshipsRequest(BaseModel):
+    db_ids: Optional[List[UUID]] = None
+    db_id: Optional[UUID] = None
+
+
+@router.post("/relationships/detect")
+async def detect_database_relationships(
+    request: DetectRelationshipsRequest,
+    db_session: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Detect candidate relationships between multiple database tables
+    using deterministic schema and data analysis without AI/LLMs.
+    """
+    ids = request.db_ids or ([request.db_id] if request.db_id else [])
+    if not ids:
+        raise HTTPException(status_code=400, detail="Either db_id or db_ids must be provided.")
+
+    conns = []
+    for did in ids:
+        stmt = select(DatabaseConnection).where(DatabaseConnection.id == did)
+        if current_user.role != "admin":
+            stmt = stmt.where(DatabaseConnection.user_id == current_user.id)
+        res = await db_session.execute(stmt)
+        conn = res.scalars().first()
+        if conn:
+            conns.append(conn)
+
+    if not conns:
+        return {"candidates": []}
+
+    schema_results = await asyncio.gather(
+        *[discover_live_schema(db_session, conn.schema_name) for conn in conns],
+        return_exceptions=True
+    )
+
+    merged_tables = {}
+    for sr in schema_results:
+        if not isinstance(sr, Exception):
+            merged_tables.update(sr.get("tables", {}))
+
+    schema_info = {"tables": merged_tables}
+    candidates = relationship_inference_service.detect_candidate_relationships(schema_info)
+
+    return {"candidates": candidates}

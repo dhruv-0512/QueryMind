@@ -8,5 +8,5 @@
     "top5_recall_pct": 100.0,
     "mrr": 1.0,
     "total_queries_evaluated": 49,
-    "avg_retrieval_latency_seconds": 0.0007
+    "avg_retrieval_latency_seconds": 0.0006
 }

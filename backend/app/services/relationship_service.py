@@ -1,133 +1,106 @@
 import logging
-from typing import Dict, Any, List, Set
+from typing import Dict, Any, List, Set, Optional
 from collections import deque
+from app.services.relationship_inference_service import relationship_inference_service
 
 logger = logging.getLogger(__name__)
 
 
 class RelationshipService:
-    def infer_csv_relationships(self, schema_info: Dict[str, Any]) -> List[Dict[str, str]]:
+    def infer_csv_relationships(
+        self,
+        schema_info: Dict[str, Any],
+        sample_data: Optional[Dict[str, Dict[str, List[Any]]]] = None
+    ) -> List[Dict[str, Any]]:
         """
-        Heuristically infer Foreign Key relationships between uploaded CSV tables when
-        no explicit SQL database Foreign Keys exist.
-
-        Methods used:
-        1. Naming convention matching (e.g. orders.customer_id -> customers.id or customers.customer_id)
-        2. Exact column name matching for non-generic ID columns (e.g. sales.client_id -> clients.client_id)
+        Delegate candidate relationship discovery to RelationshipInferenceService.
         """
+        candidates = relationship_inference_service.detect_candidate_relationships(schema_info, sample_data)
         inferred = []
-        tables_dict = schema_info.get("tables", {})
-        table_names = list(tables_dict.keys())
-        
-        # Build map of table_name_lower -> actual table name & columns_lower -> actual column name
-        tables_meta = {}
-        for t_name, meta in tables_dict.items():
-            cols = meta.get("columns", []) if isinstance(meta, dict) else meta
-            cols_dict = {c.lower(): c for c in cols}
-            tables_meta[t_name.lower()] = {
-                "original_name": t_name,
-                "columns_map": cols_dict,
-                "cols_set": set(cols_dict.keys())
-            }
-
-        seen_pairs = set()
-
-        for t_lower, t_info in tables_meta.items():
-            t_orig = t_info["original_name"]
-            for col_lower, col_orig in t_info["columns_map"].items():
-
-                # Rule 1: Column ends with _id (e.g. customer_id, product_id, department_id)
-                if col_lower.endswith("_id") and len(col_lower) > 3:
-                    prefix = col_lower[:-3]  # e.g., 'customer', 'product', 'department'
-                    
-                    # Search for target table matching prefix (e.g., 'customer' -> 'customers', 'customer_info', 'customer')
-                    for target_t_lower, target_info in tables_meta.items():
-                        if target_t_lower == t_lower:
-                            continue
-                        
-                        target_orig = target_info["original_name"]
-                        target_cols = target_info["columns_map"]
-
-                        # Check if target table name matches prefix (e.g., 'customers' matches 'customer')
-                        if target_t_lower == prefix or target_t_lower == prefix + "s" or target_t_lower == prefix + "es":
-                            # Target column could be 'id' or 'customer_id'
-                            target_col = None
-                            if "id" in target_cols:
-                                target_col = target_cols["id"]
-                            elif col_lower in target_cols:
-                                target_col = target_cols[col_lower]
-                            
-                            if target_col:
-                                pair_key = (t_orig, col_orig, target_orig, target_col)
-                                if pair_key not in seen_pairs:
-                                    seen_pairs.add(pair_key)
-                                    inferred.append({
-                                        "table": t_orig,
-                                        "column": col_orig,
-                                        "foreign_table": target_orig,
-                                        "foreign_column": target_col,
-                                        "inferred": True
-                                    })
-                                    break
-
-                # Rule 2: Shared exact column name matching (e.g. client_id in sales and clients)
-                if col_lower != "id" and col_lower.endswith("_id"):
-                    for target_t_lower, target_info in tables_meta.items():
-                        if target_t_lower == t_lower:
-                            continue
-                        target_orig = target_info["original_name"]
-                        target_cols = target_info["columns_map"]
-
-                        if col_lower in target_cols:
-                            target_col = target_cols[col_lower]
-                            pair_key = tuple(sorted([f"{t_orig}.{col_orig}", f"{target_orig}.{target_col}"]))
-                            if pair_key not in seen_pairs:
-                                seen_pairs.add(pair_key)
-                                inferred.append({
-                                    "table": t_orig,
-                                    "column": col_orig,
-                                    "foreign_table": target_orig,
-                                    "foreign_column": target_col,
-                                    "inferred": True
-                                })
-
+        for cand in candidates:
+            inferred.append({
+                "table": cand["source_table"],
+                "column": cand["source_column"],
+                "foreign_table": cand["target_table"],
+                "foreign_column": cand["target_column"],
+                "source_table": cand["source_table"],
+                "source_column": cand["source_column"],
+                "target_table": cand["target_table"],
+                "target_column": cand["target_column"],
+                "score": cand["score"],
+                "confidence_level": cand["confidence_level"],
+                "cardinality": cand["cardinality"],
+                "signals": cand["signals"],
+                "inferred": True
+            })
         return inferred
 
-    def build_fk_graph(self, schema_info: Dict[str, Any]) -> Dict[str, List[Dict[str, str]]]:
+    def build_fk_graph(
+        self,
+        schema_info: Dict[str, Any],
+        confirmed_relationships: Optional[List[Dict[str, str]]] = None,
+        sample_data: Optional[Dict[str, Dict[str, List[Any]]]] = None
+    ) -> Dict[str, List[Dict[str, str]]]:
         """
-        Build adjacency list from explicit FK metadata + inferred CSV relationships.
-        Returns {table_name: [{to_table, from_col, to_col}, ...]}
-        Includes both directions (FK from and FK to).
+        Build adjacency list from explicit database FKs + confirmed relationships + inferred candidates.
+        Returns {table_name: [{to_table, from_col, to_col, source_type}, ...]}
+        Includes both directions (forward and reverse).
         """
         graph: Dict[str, List[Dict[str, str]]] = {}
         tables_dict = schema_info.get("tables", {})
 
+        # Initialize graph nodes
+        for t_name in tables_dict.keys():
+            if t_name not in graph:
+                graph[t_name] = []
+
+        # 1. Explicit database Foreign Keys
         for table_name, meta in tables_dict.items():
-            if table_name not in graph:
-                graph[table_name] = []
-            
             fks = meta.get("foreign_keys", []) if isinstance(meta, dict) else []
             for fk in fks:
                 ft = fk.get("foreign_table", "")
+                fc = fk.get("column", "")
+                frc = fk.get("foreign_column", "")
                 if not ft:
                     continue
                 graph[table_name].append({
                     "to_table": ft,
-                    "from_col": fk.get("column", ""),
-                    "to_col": fk.get("foreign_column", ""),
-                    "direction": "forward"
+                    "from_col": fc,
+                    "to_col": frc,
+                    "direction": "forward",
+                    "source_type": "database_fk"
                 })
                 if ft not in graph:
                     graph[ft] = []
                 graph[ft].append({
                     "to_table": table_name,
-                    "from_col": fk.get("foreign_column", ""),
-                    "to_col": fk.get("column", ""),
-                    "direction": "reverse"
+                    "from_col": frc,
+                    "to_col": fc,
+                    "direction": "reverse",
+                    "source_type": "database_fk"
                 })
 
-        # Add heuristically inferred relationships for CSV files
-        inferred_fks = self.infer_csv_relationships(schema_info)
+        # 2. Confirmed relationships passed explicitly
+        user_confirmed = confirmed_relationships or schema_info.get("confirmed_relationships", [])
+        for rel in user_confirmed:
+            t = rel.get("source_table") or rel.get("table")
+            fc = rel.get("source_column") or rel.get("column")
+            ft = rel.get("target_table") or rel.get("foreign_table")
+            frc = rel.get("target_column") or rel.get("foreign_column")
+
+            if t and ft and fc and frc:
+                if t not in graph:
+                    graph[t] = []
+                if ft not in graph:
+                    graph[ft] = []
+
+                if not any(e["to_table"].lower() == ft.lower() and e["from_col"].lower() == fc.lower() for e in graph[t]):
+                    graph[t].append({"to_table": ft, "from_col": fc, "to_col": frc, "direction": "forward", "source_type": "user_confirmed"})
+                if not any(e["to_table"].lower() == t.lower() and e["from_col"].lower() == frc.lower() for e in graph[ft]):
+                    graph[ft].append({"to_table": t, "from_col": frc, "to_col": fc, "direction": "reverse", "source_type": "user_confirmed"})
+
+        # 3. Candidate relationships inferred deterministically
+        inferred_fks = self.infer_csv_relationships(schema_info, sample_data)
         for fk in inferred_fks:
             t = fk["table"]
             ft = fk["foreign_table"]
@@ -137,12 +110,11 @@ class RelationshipService:
                 graph[t] = []
             if ft not in graph:
                 graph[ft] = []
-            
-            # Avoid duplicate edges
+
             if not any(e["to_table"].lower() == ft.lower() and e["from_col"].lower() == fc.lower() for e in graph[t]):
-                graph[t].append({"to_table": ft, "from_col": fc, "to_col": frc, "direction": "forward"})
+                graph[t].append({"to_table": ft, "from_col": fc, "to_col": frc, "direction": "forward", "source_type": "inferred"})
             if not any(e["to_table"].lower() == t.lower() and e["from_col"].lower() == frc.lower() for e in graph[ft]):
-                graph[ft].append({"to_table": t, "from_col": frc, "to_col": fc, "direction": "reverse"})
+                graph[ft].append({"to_table": t, "from_col": frc, "to_col": fc, "direction": "reverse", "source_type": "inferred"})
 
         return graph
 
@@ -153,7 +125,7 @@ class RelationshipService:
         max_hops: int = 3
     ) -> Set[str]:
         """
-        BFS from seed tables up to max_hops away through FK graph.
+        BFS from seed tables up to max_hops away through relationship graph.
         Returns all connected table names including seeds.
         """
         visited: Set[str] = set()
@@ -174,20 +146,21 @@ class RelationshipService:
 
         return visited
 
-    def format_relationship_map(self, schema_info: Dict[str, Any]) -> str:
+    def format_relationship_map(
+        self,
+        schema_info: Dict[str, Any],
+        confirmed_relationships: Optional[List[Dict[str, str]]] = None,
+        sample_data: Optional[Dict[str, Dict[str, List[Any]]]] = None
+    ) -> str:
         """
-        Format FK relationships (both explicit database FKs and inferred CSV relationships)
-        as human-readable text for the LLM prompt.
-        Example output:
-          Relationships (Foreign Keys & Inferred Links):
-            orders.customer_id -> customers.id
-            order_items.order_id -> orders.id
+        Format relationship map for LLM prompt context.
+        Shows explicit database FKs, user-confirmed links, and high-confidence inferred links.
         """
         lines = []
         seen = set()
         tables_dict = schema_info.get("tables", {})
-        
-        # 1. Explicit Foreign Keys
+
+        # 1. Explicit Database Foreign Keys
         for table_name, meta in tables_dict.items():
             fks = meta.get("foreign_keys", []) if isinstance(meta, dict) else []
             for fk in fks:
@@ -200,8 +173,21 @@ class RelationshipService:
                         seen.add(line)
                         lines.append(line)
 
-        # 2. Inferred CSV Relationships
-        inferred = self.infer_csv_relationships(schema_info)
+        # 2. Confirmed relationships
+        user_confirmed = confirmed_relationships or schema_info.get("confirmed_relationships", [])
+        for rel in user_confirmed:
+            t = rel.get("source_table") or rel.get("table")
+            fc = rel.get("source_column") or rel.get("column")
+            ft = rel.get("target_table") or rel.get("foreign_table")
+            frc = rel.get("target_column") or rel.get("foreign_column")
+            if t and ft and fc and frc:
+                line = f'  {t}.{fc} -> {ft}.{frc} (Confirmed Link)'
+                if line not in seen:
+                    seen.add(line)
+                    lines.append(line)
+
+        # 3. Inferred Candidate Relationships
+        inferred = self.infer_csv_relationships(schema_info, sample_data)
         for fk in inferred:
             line = f'  {fk["table"]}.{fk["column"]} -> {fk["foreign_table"]}.{fk["foreign_column"]} (Inferred Link)'
             if line not in seen:

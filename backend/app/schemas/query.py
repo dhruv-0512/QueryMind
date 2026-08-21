@@ -7,6 +7,7 @@ class QueryRequest(BaseModel):
     db_id: Optional[UUID] = None          # backward-compat: single datasource
     db_ids: Optional[List[UUID]] = None   # new: multiple datasources
     question: str
+    confirmed_relationships: Optional[List[Dict[str, Any]]] = None  # user-confirmed links
 
     @model_validator(mode="after")
     def check_at_least_one_db(self) -> "QueryRequest":

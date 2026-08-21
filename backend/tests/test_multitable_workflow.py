@@ -74,11 +74,12 @@ def test_infer_csv_relationships():
     }
 
     inferred = relationship_service.infer_csv_relationships(csv_schema)
-    assert len(inferred) == 1
-    assert inferred[0]["table"] == "hr"
-    assert inferred[0]["column"] == "department_id"
-    assert inferred[0]["foreign_table"] == "departments"
-    assert inferred[0]["foreign_column"] == "id"
+    strong = [i for i in inferred if i["confidence_level"] == "strong"]
+    assert len(strong) >= 1
+    assert strong[0]["table"] == "hr"
+    assert strong[0]["column"] == "department_id"
+    assert strong[0]["foreign_table"] == "departments"
+    assert strong[0]["foreign_column"] == "id"
 
     rel_map = relationship_service.format_relationship_map(csv_schema)
     assert "hr.department_id -> departments.id" in rel_map

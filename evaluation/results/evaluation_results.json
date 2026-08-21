@@ -1,48 +1,48 @@
 [
     {
-        "question": "Can you tell me how many flights are currently in the system?",
+        "question": "What is the total count of flights are currently in the system?",
         "generated_sql": "SELECT COUNT(*) FROM flights;",
         "expected_sql": "SELECT COUNT(*) FROM flights;",
         "execution_success": true,
         "result_correctness": true,
         "execution_error": null,
-        "latency_seconds": 1.1537
+        "latency_seconds": 1.1521
     },
     {
-        "question": "Identify which airline had the highest cancellation rate?",
+        "question": "Find which airline had the highest cancellation rate?",
         "generated_sql": "SELECT al.airline_name, ROUND(100.0*SUM(CASE WHEN f.status='Cancelled' THEN 1 ELSE 0 END)/COUNT(*),2) AS cancel_rate FROM flights f JOIN airlines al ON f.airline_id=al.airline_id GROUP BY al.airline_id ORDER BY cancel_rate DESC LIMIT 1;",
         "expected_sql": "SELECT al.airline_name, ROUND(100.0*SUM(CASE WHEN f.status='Cancelled' THEN 1 ELSE 0 END)/COUNT(*),2) AS cancel_rate FROM flights f JOIN airlines al ON f.airline_id=al.airline_id GROUP BY al.airline_id ORDER BY cancel_rate DESC LIMIT 1;",
         "execution_success": true,
         "result_correctness": true,
         "execution_error": null,
-        "latency_seconds": 1.8165
+        "latency_seconds": 1.816
     },
     {
-        "question": "Retrieve every passengers with Platinum frequent flyer status.",
+        "question": "Find all passengers with Platinum frequent flyer status.",
         "generated_sql": "SELECT first_name, last_name, nationality FROM passengers WHERE frequent_flyer_tier = 'Platinum';",
         "expected_sql": "SELECT first_name, last_name, nationality FROM passengers WHERE frequent_flyer_tier = 'Platinum';",
         "execution_success": true,
         "result_correctness": true,
         "execution_error": null,
-        "latency_seconds": 1.5598
+        "latency_seconds": 1.5594
     },
     {
-        "question": "Find which airline transported the highest number of passengers based on confirmed bookings?",
+        "question": "What specific airline transported the highest number of passengers based on confirmed bookings?",
         "generated_sql": "SELECT al.airline_name, COUNT(*) AS passengers_transported FROM bookings b JOIN flights f ON b.flight_id=f.flight_id JOIN airlines al ON f.airline_id=al.airline_id WHERE b.booking_status='Confirmed' GROUP BY al.airline_id ORDER BY passengers_transported DESC LIMIT 1;",
         "expected_sql": "SELECT al.airline_name, COUNT(*) AS passengers_transported FROM bookings b JOIN flights f ON b.flight_id=f.flight_id JOIN airlines al ON f.airline_id=al.airline_id WHERE b.booking_status='Confirmed' GROUP BY al.airline_id ORDER BY passengers_transported DESC LIMIT 1;",
         "execution_success": true,
         "result_correctness": true,
         "execution_error": null,
-        "latency_seconds": 1.5232
+        "latency_seconds": 1.5234
     },
     {
-        "question": "Calculate the mean fare amount by seat class?",
+        "question": "Show average fare amount by seat class?",
         "generated_sql": "SELECT seat_class, ROUND(AVG(fare_amount),2) AS avg_fare FROM bookings GROUP BY seat_class ORDER BY avg_fare DESC;",
         "expected_sql": "SELECT seat_class, ROUND(AVG(fare_amount),2) AS avg_fare FROM bookings GROUP BY seat_class ORDER BY avg_fare DESC;",
         "execution_success": true,
         "result_correctness": true,
         "execution_error": null,
-        "latency_seconds": 1.6416
+        "latency_seconds": 1.642
     },
     {
         "question": "What is the total count of distinct passengers have flown with SkyBridge Airlines?",
@@ -51,7 +51,7 @@
         "execution_success": true,
         "result_correctness": true,
         "execution_error": null,
-        "latency_seconds": 1.1485
+        "latency_seconds": 1.1488
     },
     {
         "question": "What specific airports have the most departing flights?",
@@ -60,7 +60,7 @@
         "execution_success": true,
         "result_correctness": true,
         "execution_error": null,
-        "latency_seconds": 1.5004
+        "latency_seconds": 1.5006
     },
     {
         "question": "Can you show me list passengers who have made more than 8 bookings.?",
@@ -69,7 +69,7 @@
         "execution_success": true,
         "result_correctness": true,
         "execution_error": null,
-        "latency_seconds": 1.6965
+        "latency_seconds": 1.698
     },
     {
         "question": "Can you show me what is the total revenue generated from business class bookings??",
@@ -78,16 +78,16 @@
         "execution_success": true,
         "result_correctness": true,
         "execution_error": null,
-        "latency_seconds": 1.6679
+        "latency_seconds": 1.67
     },
     {
-        "question": "What specific aircraft model is used most frequently across all airlines?",
+        "question": "Find which aircraft model is used most frequently across all airlines?",
         "generated_sql": "SELECT model, COUNT(*) AS num_aircraft FROM aircraft GROUP BY model ORDER BY num_aircraft DESC LIMIT 1;",
         "expected_sql": "SELECT model, COUNT(*) AS num_aircraft FROM aircraft GROUP BY model ORDER BY num_aircraft DESC LIMIT 1;",
         "execution_success": true,
         "result_correctness": true,
         "execution_error": null,
-        "latency_seconds": 1.7208
+        "latency_seconds": 1.7216
     },
     {
         "question": "Can you show me find flights that were delayed departing from jfk.?",
@@ -96,7 +96,7 @@
         "execution_success": true,
         "result_correctness": true,
         "execution_error": null,
-        "latency_seconds": 1.1858
+        "latency_seconds": 1.188
     },
     {
         "question": "What is the total count of bookings have no associated fare amount recorded?",
@@ -105,7 +105,7 @@
         "execution_success": true,
         "result_correctness": true,
         "execution_error": null,
-        "latency_seconds": 1.5657
+        "latency_seconds": 1.5665
     },
     {
         "question": "What specific passengers have flown on more than 3 different airlines?",
@@ -114,16 +114,16 @@
         "execution_success": false,
         "result_correctness": false,
         "execution_error": "You can only execute one statement at a time.",
-        "latency_seconds": 1.4378
+        "latency_seconds": 1.4374
     },
     {
-        "question": "Calculate the mean flight duration in hours for each airline?",
+        "question": "Find the average flight duration in hours for each airline?",
         "generated_sql": "SELECT al.airline_name, ROUND(AVG((julianday(f.arrival_time)-julianday(f.departure_time))*24),2) AS avg_duration_hrs FROM flights f JOIN airlines al ON f.airline_id=al.airline_id GROUP BY al.airline_id ORDER BY avg_duration_hrs DESC;",
         "expected_sql": "SELECT al.airline_name, ROUND(AVG((julianday(f.arrival_time)-julianday(f.departure_time))*24),2) AS avg_duration_hrs FROM flights f JOIN airlines al ON f.airline_id=al.airline_id GROUP BY al.airline_id ORDER BY avg_duration_hrs DESC;",
         "execution_success": true,
         "result_correctness": true,
         "execution_error": null,
-        "latency_seconds": 1.8266
+        "latency_seconds": 1.8262
     },
     {
         "question": "Can you show me list the 5 most recent bookings made.?",
@@ -141,7 +141,7 @@
         "execution_success": true,
         "result_correctness": true,
         "execution_error": null,
-        "latency_seconds": 1.2924
+        "latency_seconds": 1.2937
     },
     {
         "question": "Can you show me what is the total number of aircraft owned by each airline??",
@@ -150,7 +150,7 @@
         "execution_success": true,
         "result_correctness": true,
         "execution_error": null,
-        "latency_seconds": 1.1851
+        "latency_seconds": 1.1862
     },
     {
         "question": "Can you show me find passengers who booked flights but whose booking was later cancelled more than once.?",
@@ -159,7 +159,7 @@
         "execution_success": true,
         "result_correctness": true,
         "execution_error": null,
-        "latency_seconds": 1.3355
+        "latency_seconds": 1.3349
     },
     {
         "question": "Can you show me what percentage of all flights were completed on schedule (status completed)??",
@@ -168,7 +168,7 @@
         "execution_success": true,
         "result_correctness": true,
         "execution_error": null,
-        "latency_seconds": 1.4597
+        "latency_seconds": 1.4595
     },
     {
         "question": "Find which route (origin-destination pair) has the highest number of flights?",
@@ -177,7 +177,7 @@
         "execution_success": false,
         "result_correctness": false,
         "execution_error": "You can only execute one statement at a time.",
-        "latency_seconds": 1.4442
+        "latency_seconds": 1.4446
     },
     {
         "question": "Can you tell me how many passengers have never made a booking?",
@@ -186,7 +186,7 @@
         "execution_success": true,
         "result_correctness": true,
         "execution_error": null,
-        "latency_seconds": 1.6572
+        "latency_seconds": 1.6569
     },
     {
         "question": "Can you show me list airlines founded before 1980.?",
@@ -195,7 +195,7 @@
         "execution_success": true,
         "result_correctness": true,
         "execution_error": null,
-        "latency_seconds": 1.3904
+        "latency_seconds": 1.3899
     },
     {
         "question": "Show average fare paid by passengers with Gold status versus those with no status?",
@@ -204,7 +204,7 @@
         "execution_success": true,
         "result_correctness": true,
         "execution_error": null,
-        "latency_seconds": 1.6242
+        "latency_seconds": 1.6234
     },
     {
         "question": "What specific aircraft has flown the most flights?",
@@ -213,7 +213,7 @@
         "execution_success": true,
         "result_correctness": true,
         "execution_error": null,
-        "latency_seconds": 1.8542
+        "latency_seconds": 1.8531
     },
     {
         "question": "Can you show me find the total fare revenue collected per month over the last year.?",
@@ -222,7 +222,7 @@
         "execution_success": true,
         "result_correctness": true,
         "execution_error": null,
-        "latency_seconds": 1.5932
+        "latency_seconds": 1.5926
     },
     {
         "question": "What specific passengers have booked both Economy and First class seats?",
@@ -231,7 +231,7 @@
         "execution_success": true,
         "result_correctness": true,
         "execution_error": null,
-        "latency_seconds": 1.5103
+        "latency_seconds": 1.5094
     },
     {
         "question": "Can you show me what is the capacity utilization estimate (confirmed bookings vs aircraft capacity) for each flight, top 10 highest??",
@@ -240,16 +240,16 @@
         "execution_success": true,
         "result_correctness": true,
         "execution_error": null,
-        "latency_seconds": 1.5562
+        "latency_seconds": 1.5544
     },
     {
-        "question": "What specific country has the most airlines headquartered there?",
+        "question": "Identify which country has the most airlines headquartered there?",
         "generated_sql": "SELECT country, COUNT(*) AS num_airlines FROM airlines GROUP BY country ORDER BY num_airlines DESC LIMIT 1;",
         "expected_sql": "SELECT country, COUNT(*) AS num_airlines FROM airlines GROUP BY country ORDER BY num_airlines DESC LIMIT 1;",
         "execution_success": true,
         "result_correctness": true,
         "execution_error": null,
-        "latency_seconds": 1.3035
+        "latency_seconds": 1.3036
     },
     {
         "question": "Can you show me list flights arriving at dubai international airport (dxb).?",
@@ -258,25 +258,25 @@
         "execution_success": true,
         "result_correctness": true,
         "execution_error": null,
-        "latency_seconds": 1.216
+        "latency_seconds": 1.2155
     },
     {
-        "question": "What specific passenger has spent the most money on bookings in total?",
+        "question": "Identify which passenger has spent the most money on bookings in total?",
         "generated_sql": "SELECT p.first_name, p.last_name, ROUND(SUM(b.fare_amount),2) AS total_spent FROM bookings b JOIN passengers p ON b.passenger_id=p.passenger_id WHERE b.booking_status='Confirmed' GROUP BY p.passenger_id ORDER BY total_spent DESC LIMIT 1;",
         "expected_sql": "SELECT p.first_name, p.last_name, ROUND(SUM(b.fare_amount),2) AS total_spent FROM bookings b JOIN passengers p ON b.passenger_id=p.passenger_id WHERE b.booking_status='Confirmed' GROUP BY p.passenger_id ORDER BY total_spent DESC LIMIT 1;",
         "execution_success": true,
         "result_correctness": true,
         "execution_error": null,
-        "latency_seconds": 1.3725
+        "latency_seconds": 1.3729
     },
     {
-        "question": "Give the total number of aircraft were manufactured after 2018?",
+        "question": "Can you tell me how many aircraft were manufactured after 2018?",
         "generated_sql": "SELECT COUNT(*) FROM aircraft WHERE manufacture_year > 2018;",
         "expected_sql": "SELECT COUNT(*) FROM aircraft WHERE manufacture_year > 2018;",
         "execution_success": true,
         "result_correctness": true,
         "execution_error": null,
-        "latency_seconds": 1.2263
+        "latency_seconds": 1.2305
     },
     {
         "question": "Can you show me find airlines whose average booking fare exceeds the overall average fare across all airlines.?",
@@ -285,7 +285,7 @@
         "execution_success": true,
         "result_correctness": true,
         "execution_error": null,
-        "latency_seconds": 1.4239
+        "latency_seconds": 1.4234
     },
     {
         "question": "Can you show me what is the busiest month for flight departures??",
@@ -294,7 +294,7 @@
         "execution_success": true,
         "result_correctness": true,
         "execution_error": null,
-        "latency_seconds": 1.2686
+        "latency_seconds": 1.2683
     },
     {
         "question": "Can you show me list passengers born before 1960.?",
@@ -303,7 +303,7 @@
         "execution_success": true,
         "result_correctness": true,
         "execution_error": null,
-        "latency_seconds": 1.5175
+        "latency_seconds": 1.5171
     },
     {
         "question": "Find which flights have a duration longer than 10 hours?",
@@ -312,7 +312,7 @@
         "execution_success": true,
         "result_correctness": true,
         "execution_error": null,
-        "latency_seconds": 1.8734
+        "latency_seconds": 1.8751
     },
     {
         "question": "Give the total number of waitlisted bookings currently exist per airline?",
@@ -321,16 +321,16 @@
         "execution_success": true,
         "result_correctness": true,
         "execution_error": null,
-        "latency_seconds": 1.2485
+        "latency_seconds": 1.2486
     },
     {
-        "question": "What specific nationality of passengers books the most Business class seats?",
+        "question": "Find which nationality of passengers books the most Business class seats?",
         "generated_sql": "SELECT p.nationality, COUNT(*) AS business_bookings FROM bookings b JOIN passengers p ON b.passenger_id=p.passenger_id WHERE b.seat_class='Business' GROUP BY p.nationality ORDER BY business_bookings DESC LIMIT 1;",
         "expected_sql": "SELECT p.nationality, COUNT(*) AS business_bookings FROM bookings b JOIN passengers p ON b.passenger_id=p.passenger_id WHERE b.seat_class='Business' GROUP BY p.nationality ORDER BY business_bookings DESC LIMIT 1;",
         "execution_success": true,
         "result_correctness": true,
         "execution_error": null,
-        "latency_seconds": 1.7692
+        "latency_seconds": 1.7669
     },
     {
         "question": "Can you show me find the second-highest fare ever paid for a single booking.?",
@@ -339,16 +339,16 @@
         "execution_success": true,
         "result_correctness": true,
         "execution_error": null,
-        "latency_seconds": 1.5585
+        "latency_seconds": 1.5586
     },
     {
-        "question": "Can you tell me how many distinct routes does each airline operate?",
+        "question": "What is the total count of distinct routes does each airline operate?",
         "generated_sql": "SELECT al.airline_name, COUNT(DISTINCT f.origin_airport_id || '-' || f.destination_airport_id) AS distinct_routes FROM flights f JOIN airlines al ON f.airline_id=al.airline_id GROUP BY al.airline_id ORDER BY distinct_routes DESC;",
         "expected_sql": "SELECT al.airline_name, COUNT(DISTINCT f.origin_airport_id || '-' || f.destination_airport_id) AS distinct_routes FROM flights f JOIN airlines al ON f.airline_id=al.airline_id GROUP BY al.airline_id ORDER BY distinct_routes DESC;",
         "execution_success": true,
         "result_correctness": true,
         "execution_error": null,
-        "latency_seconds": 1.7407
+        "latency_seconds": 1.7403
     },
     {
         "question": "What specific flights are scheduled but originate from an airport with fewer than 20 total flights?",
@@ -357,7 +357,7 @@
         "execution_success": true,
         "result_correctness": true,
         "execution_error": null,
-        "latency_seconds": 1.372
+        "latency_seconds": 1.3727
     },
     {
         "question": "Can you show me what is the total number of seats (capacity) available across all aircraft owned by each airline??",
@@ -366,7 +366,7 @@
         "execution_success": true,
         "result_correctness": true,
         "execution_error": null,
-        "latency_seconds": 1.4365
+        "latency_seconds": 1.4364
     },
     {
         "question": "Can you show me list bookings made on the same day the flight departed (same-day bookings).?",
@@ -375,7 +375,7 @@
         "execution_success": true,
         "result_correctness": true,
         "execution_error": null,
-        "latency_seconds": 1.1995
+        "latency_seconds": 1.1998
     },
     {
         "question": "What specific passengers have a booking with a NULL or missing seat class recorded?",
@@ -384,34 +384,34 @@
         "execution_success": true,
         "result_correctness": true,
         "execution_error": null,
-        "latency_seconds": 1.8714
+        "latency_seconds": 1.8719
     },
     {
-        "question": "Calculate the mean passenger age at time of booking, grouped by seat class?",
+        "question": "Find the average passenger age at time of booking, grouped by seat class?",
         "generated_sql": "SELECT b.seat_class, ROUND(AVG((julianday(b.booking_date)-julianday(p.birth_date))/365.25),1) AS avg_age FROM bookings b JOIN passengers p ON b.passenger_id=p.passenger_id GROUP BY b.seat_class ORDER BY avg_age DESC;",
         "expected_sql": "SELECT b.seat_class, ROUND(AVG((julianday(b.booking_date)-julianday(p.birth_date))/365.25),1) AS avg_age FROM bookings b JOIN passengers p ON b.passenger_id=p.passenger_id GROUP BY b.seat_class ORDER BY avg_age DESC;",
         "execution_success": true,
         "result_correctness": true,
         "execution_error": null,
-        "latency_seconds": 1.4916
+        "latency_seconds": 1.4925
     },
     {
-        "question": "Identify which airline operates the newest fleet on average (by manufacture year)?",
+        "question": "Find which airline operates the newest fleet on average (by manufacture year)?",
         "generated_sql": "SELECT al.airline_name, ROUND(AVG(ac.manufacture_year),1) AS avg_year FROM aircraft ac JOIN airlines al ON ac.airline_id=al.airline_id GROUP BY al.airline_id ORDER BY avg_year DESC LIMIT 1;",
         "expected_sql": "SELECT al.airline_name, ROUND(AVG(ac.manufacture_year),1) AS avg_year FROM aircraft ac JOIN airlines al ON ac.airline_id=al.airline_id GROUP BY al.airline_id ORDER BY avg_year DESC LIMIT 1;",
         "execution_success": true,
         "result_correctness": true,
         "execution_error": null,
-        "latency_seconds": 1.8666
+        "latency_seconds": 1.8676
     },
     {
-        "question": "What is the total count of flights were delayed or cancelled in the last 90 days?",
+        "question": "Can you tell me how many flights were delayed or cancelled in the last 90 days?",
         "generated_sql": "SELECT COUNT(*) FROM flights WHERE status IN ('Delayed','Cancelled') AND departure_time >= date('now','-90 day');",
         "expected_sql": "SELECT COUNT(*) FROM flights WHERE status IN ('Delayed','Cancelled') AND departure_time >= date('now','-90 day');",
         "execution_success": true,
         "result_correctness": true,
         "execution_error": null,
-        "latency_seconds": 1.5867
+        "latency_seconds": 1.5872
     },
     {
         "question": "Can you show me find the top 3 passengers by number of distinct destination cities visited.?",
@@ -420,7 +420,7 @@
         "execution_success": true,
         "result_correctness": true,
         "execution_error": null,
-        "latency_seconds": 1.5845
+        "latency_seconds": 1.5847
     },
     {
         "question": "Can you show me what is the total number of bookings in the system??",
@@ -429,15 +429,15 @@
         "execution_success": true,
         "result_correctness": true,
         "execution_error": null,
-        "latency_seconds": 1.4759
+        "latency_seconds": 1.4771
     },
     {
-        "question": "What specific airports serve as both an origin and destination for more than 50 flights combined?",
+        "question": "Identify which airports serve as both an origin and destination for more than 50 flights combined?",
         "generated_sql": "SELECT ap.airport_code, ap.city, (SELECT COUNT(*) FROM flights WHERE invalid_column = origin_airport_id=ap.airport_id) + (SELECT COUNT(*) FROM flights WHERE destination_airport_id=ap.airport_id) AS total_traffic FROM airports ap HAVING total_traffic > 50 ORDER BY total_traffic DESC;",
         "expected_sql": "SELECT ap.airport_code, ap.city, (SELECT COUNT(*) FROM flights WHERE origin_airport_id=ap.airport_id) + (SELECT COUNT(*) FROM flights WHERE destination_airport_id=ap.airport_id) AS total_traffic FROM airports ap HAVING total_traffic > 50 ORDER BY total_traffic DESC;",
         "execution_success": false,
         "result_correctness": false,
         "execution_error": "no such column: invalid_column",
-        "latency_seconds": 1.8868
+        "latency_seconds": 1.8871
     }
 ]

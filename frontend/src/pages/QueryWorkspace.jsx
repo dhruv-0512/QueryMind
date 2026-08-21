@@ -5,15 +5,17 @@ import { SQLViewer } from '../components/SQLViewer';
 import { ResultsTable } from '../components/ResultsTable';
 import { ChartView } from '../components/ChartView';
 import { useQueryHistory } from '../hooks/useQueryHistory';
+import { DetectedRelationshipsModal } from '../components/DetectedRelationshipsModal';
 
 export const QueryWorkspace = ({ selectedDbId }) => {
-  const [databases,   setDatabases]   = useState([]);
-  const [activeDbIds, setActiveDbIds] = useState([]);
-  const [question,    setQuestion]    = useState('');
-  const [isLoading,   setIsLoading]   = useState(false);
-  const [errorMsg,    setErrorMsg]    = useState('');
-  const [queryResult, setQueryResult] = useState(null);
-  const [activeTab,   setActiveTab]   = useState('table');
+  const [databases,              setDatabases]              = useState([]);
+  const [activeDbIds,            setActiveDbIds]            = useState([]);
+  const [confirmedRelationships, setConfirmedRelationships] = useState([]);
+  const [question,               setQuestion]               = useState('');
+  const [isLoading,              setIsLoading]              = useState(false);
+  const [errorMsg,               setErrorMsg]               = useState('');
+  const [queryResult,            setQueryResult]            = useState(null);
+  const [activeTab,              setActiveTab]              = useState('table');
 
   const textareaRef = useRef(null);
   const { push, navigate, getCount } = useQueryHistory();
@@ -79,8 +81,8 @@ export const QueryWorkspace = ({ selectedDbId }) => {
     try {
       // Use db_ids array for multi-select, or db_id for backward compat with single
       const payload = activeDbIds.length === 1
-        ? { db_id: activeDbIds[0], question: question.trim() }
-        : { db_ids: activeDbIds, question: question.trim() };
+        ? { db_id: activeDbIds[0], question: question.trim(), confirmed_relationships: confirmedRelationships }
+        : { db_ids: activeDbIds, question: question.trim(), confirmed_relationships: confirmedRelationships };
       const response = await api.post('/query', payload);
       setQueryResult(response);
     } catch (err) {
@@ -248,6 +250,12 @@ export const QueryWorkspace = ({ selectedDbId }) => {
                 </div>
               )}
             </div>
+
+            {/* Detected Relationships Panel (rendered when 2+ datasources are selected) */}
+            <DetectedRelationshipsModal
+              activeDbIds={activeDbIds}
+              onConfirmRelationships={setConfirmedRelationships}
+            />
 
             {/* Question textarea */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>

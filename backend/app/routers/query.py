@@ -251,12 +251,15 @@ async def execute_nl_query(
         f"  Multi-DB       : {len(all_db_conns) > 1}"
     )
 
-    # Build relationship map for LLM
-    rel_map = relationship_service.format_relationship_map(live_schema_info)
+    # Build relationship map for LLM (includes explicit FKs, confirmed links, and inferred CSV candidates)
+    rel_map = relationship_service.format_relationship_map(
+        live_schema_info,
+        confirmed_relationships=request.confirmed_relationships
+    )
     if rel_map:
         logger.info(f"[RELATIONSHIP MAP]\n{rel_map}")
     else:
-        logger.info("[RELATIONSHIP MAP] No FK relationships found (CSV uploads lack FK constraints).")
+        logger.info("[RELATIONSHIP MAP] No FK relationships found.")
 
     # Pipeline instrumentation
     logger.info(f"=== PIPELINE INSTRUMENTATION LOGS ===")

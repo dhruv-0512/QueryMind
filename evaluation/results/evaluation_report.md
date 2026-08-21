@@ -14,19 +14,19 @@
 | **Retrieval** | **Top-1 Recall** | `100.0%` | `> 90.0%` | **PASSED** |
 | **Retrieval** | **Top-5 Recall** | `100.0%` | `> 95.0%` | **PASSED** |
 | **Retrieval** | **Mean Reciprocal Rank (MRR)** | `1.0` | `> 0.90` | **PASSED** |
-| **Latency** | **Average End-to-End Latency** | `1.5079 s` | `< 2.0 s` | **OPTIMAL** |
-| **Latency** | **P95 Latency** | `1.8695 s` | `< 2.5 s` | **OPTIMAL** |
+| **Latency** | **Average End-to-End Latency** | `1.5081 s` | `< 2.0 s` | **OPTIMAL** |
+| **Latency** | **P95 Latency** | `1.8702 s` | `< 2.5 s` | **OPTIMAL** |
 | **Security** | **Prohibited SQL Injection Block Rate** | `4/4 (100%)` | `100%` | **SECURE** |
 
 ---
 
 ## 2. Latency Breakdown per Stage
 
-- **Retriever Latency**: `0.0196s` (Avg) / `0.0239s` (P95)
+- **Retriever Latency**: `0.0195s` (Avg) / `0.0239s` (P95)
 - **Embedding Latency**: `0.0133s` (Avg) / `0.017s` (P95)
 - **LLM Generation Latency**: `1.4735s` (Avg) / `1.8375s` (P95)
-- **SQL Execution Latency**: `0.0015s` (Avg) / `0.0024s` (P95)
-- **Total System Latency**: `1.5079s` (Avg) / `1.8695s` (P95)
+- **SQL Execution Latency**: `0.0017s` (Avg) / `0.0034s` (P95)
+- **Total System Latency**: `1.5081s` (Avg) / `1.8702s` (P95)
 
 ---
 
