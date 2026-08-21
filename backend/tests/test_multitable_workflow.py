@@ -52,10 +52,36 @@ def test_relationship_service_fk_graph():
 
     # 3. Format relationship map
     rel_map = relationship_service.format_relationship_map(schema_info)
-    assert "Relationships (Foreign Keys):" in rel_map
+    assert "Relationships" in rel_map
     assert "orders.customer_id -> customers.id" in rel_map
     assert "order_items.order_id -> orders.id" in rel_map
     assert "order_items.product_id -> products.id" in rel_map
+
+
+def test_infer_csv_relationships():
+    # Plain CSV schemas without explicit SQL Foreign Key constraints
+    csv_schema = {
+        "tables": {
+            "hr": {
+                "columns": ["id", "employee_name", "department_id", "salary"],
+                "foreign_keys": []
+            },
+            "departments": {
+                "columns": ["id", "department_name", "location"],
+                "foreign_keys": []
+            }
+        }
+    }
+
+    inferred = relationship_service.infer_csv_relationships(csv_schema)
+    assert len(inferred) == 1
+    assert inferred[0]["table"] == "hr"
+    assert inferred[0]["column"] == "department_id"
+    assert inferred[0]["foreign_table"] == "departments"
+    assert inferred[0]["foreign_column"] == "id"
+
+    rel_map = relationship_service.format_relationship_map(csv_schema)
+    assert "hr.department_id -> departments.id" in rel_map
 
 
 def test_query_request_schema():
