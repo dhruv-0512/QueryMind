@@ -95,7 +95,7 @@ class TestSqlRagAdaptation(unittest.IsolatedAsyncioTestCase):
         adapted = self.sql_service._adapt_sql_from_example(example_sql, schema)
         self.assertEqual(
             adapted,
-            'SELECT COUNT(*) FROM "hr" WHERE "major_record_format" = \'CD\' OR "major_record_format" = \'DVD\';'
+            'SELECT COUNT(*) FROM "hr" WHERE "major_record_format" = "CD" OR "major_record_format" = "DVD";'
         )
 
     def test_rag_direct_on_high_similarity(self):
@@ -116,9 +116,10 @@ class TestSqlRagAdaptation(unittest.IsolatedAsyncioTestCase):
         examples = [{"question": "q", "sql": "SELECT 1", "similarity": 0.5}]
         self.assertIsNone(self.sql_service._try_rag_direct(schema, "q", examples))
 
+    @patch("app.services.sql_service.SqlService._generate_with_deepseek", return_value=None)
     @patch("app.services.sql_service.is_api_key_configured")
     @patch("app.services.sql_service.genai.GenerativeModel")
-    async def test_generate_sql_rag_prompt(self, mock_model_class, mock_key):
+    async def test_generate_sql_rag_prompt(self, mock_model_class, mock_key, mock_deepseek):
         mock_key.return_value = True
         mock_model = MagicMock()
         mock_model_class.return_value = mock_model
