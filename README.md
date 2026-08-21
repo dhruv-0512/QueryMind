@@ -133,21 +133,32 @@ python evaluation/evaluate_multitable.py
 
 All evaluation artifacts, benchmark markdown reports, and JSON metrics are stored in [`evaluation/results/`](file:///C:/Users/dhruv/Desktop/PROJECTS/New%20folder%20%287%29/evaluation/results).
 
-## How It Works & Resiliency Patterns
+## How It Works: Multi-File Upload & Cross-Table PostgreSQL Engine
 
-1. **Upload** CSV/XLSX/JSON files — bulk-loaded into per-user PostgreSQL temp schemas.
-2. **Select Datasources** — choose one or multiple database sources in the UI.
-3. **Ask** a question in natural language (e.g. "Which passengers flew on SkyBridge Airlines in 2024?").
-4. **Relationship-Aware RAG Retrieval**:
-   - Reads live schema and builds a bidirectional FK graph.
-   - Searches ChromaDB for relevant tables and uses BFS traversal (`RelationshipService`) to pull in all connected table DDLs.
-   - Retrieves top-5 similar question-SQL templates from the 2,500+ Spider & WikiSQL corpus.
-5. **SQL Generation Pathways**:
-   - **RAG-Direct (Cosine Similarity ≥ 78%, single-table)**: Executes in **<15ms with $0 API cost**.
-   - **LLM Multi-Table Reasoning (<78% or JOIN query)**: Injects the schema, FK relationship map, and anonymized structural templates into DeepSeek AI (or Gemini).
-6. **AST Validation & Qualification**: Parses generated SQL via `sqlglot`, validates table/column grounding, qualifies table names with schema prefixes, and handles CTE/alias scopes.
-7. **Circuit Breaker Protection**: Wraps external LLM calls. Fails fast in `<1ms` if 5 consecutive errors occur.
-8. **Caching & Idempotent Event Audit**: Caches results in Redis and streams async events to Apache Kafka for idempotent audit logging.
+1. **Multi-File Upload & Ingestion**:
+   - Upload any number of data files (`.csv`, `.xlsx`, `.json`) — e.g. `customers.csv`, `orders.csv`, `products.json`.
+   - Each file is converted into a native PostgreSQL table inside an isolated PostgreSQL schema (`user_{uid}_{db_id}`) using `asyncpg` COPY protocol for sub-second ingestion.
+2. **Multi-Datasource Selection**:
+   - In the **Query Workspace**, select one or multiple uploaded databases from the Data Sources panel using checkboxes.
+3. **Unified Multi-Schema Discovery**:
+   - When you click **Run Query**, QueryMind discovers the live PostgreSQL schemas for all selected files in parallel.
+   - It constructs a unified multi-table context, extracting column names, data types, and Foreign Key relationships.
+4. **Relationship-Aware RAG Retrieval & Prompting**:
+   - Searches ChromaDB for relevant tables and uses BFS graph traversal ([`RelationshipService`](file:///C:/Users/dhruv/Desktop/PROJECTS/New%20folder%20(7)/backend/app/services/relationship_service.py)) to pull in transitively connected FK table schemas.
+   - Retrieves top matching structural templates from the 2,500+ Spider & WikiSQL corpus.
+   - Injects the merged schema, relationship map, and guidelines into DeepSeek AI (or Gemini).
+5. **Cross-Schema PostgreSQL Qualification & JOIN Execution**:
+   - The LLM generates standard ANSI SQL JOINs across tables (e.g. `FROM customers c JOIN orders o ON c.id = o.customer_id`).
+   - QueryMind's AST qualification engine ([`_qualify_sql_tables`](file:///C:/Users/dhruv/Desktop/PROJECTS/New%20folder%20(7)/backend/app/routers/query.py#L30-L61)) maps each table to its respective PostgreSQL schema:
+     ```sql
+     SELECT c.name, SUM(o.total_amount) AS revenue
+     FROM "user_a1b2_db1"."customers" c
+     JOIN "user_a1b2_db2"."orders" o ON c.id = o.customer_id
+     GROUP BY c.name;
+     ```
+   - Sets PostgreSQL `search_path` dynamically to include all selected schemas and executes the query directly in PostgreSQL.
+6. **AST Validation & Recovery**: Parses the generated SQL with `sqlglot` to prevent schema hallucinations and handles schema recovery automatically.
+7. **Caching & Idempotent Audit**: Caches results in Redis (300s TTL) and logs asynchronous audit events to Apache Kafka.
 
 ## Environment Variables
 
