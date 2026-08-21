@@ -24,9 +24,13 @@ export const QueryWorkspace = ({ selectedDbId }) => {
         const data = await api.get('/database/list');
         setDatabases(data);
         if (selectedDbId) {
-          setActiveDbIds([selectedDbId]);
+          if (Array.isArray(selectedDbId)) {
+            setActiveDbIds(selectedDbId);
+          } else {
+            setActiveDbIds([selectedDbId]);
+          }
         } else if (data.length > 0) {
-          setActiveDbIds([data[0].id]);
+          setActiveDbIds(data.map(d => d.id));
         }
       } catch (err) {
         console.error('Failed to retrieve databases:', err);

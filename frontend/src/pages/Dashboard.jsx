@@ -1,25 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Database, Trash2, Calendar, DatabaseZap, ShieldAlert, Loader2, ArrowRight, Layers, FileType } from 'lucide-react';
+import { Database, Trash2, Calendar, ShieldAlert, Loader2, ArrowRight, Layers, Terminal, CheckSquare, Square } from 'lucide-react';
 import { api } from '../services/api';
 import { DatabaseUpload } from '../components/DatabaseUpload';
 
-/*
-  Why: Old Dashboard had:
-    - "Database Registry" as glow-text gradient heading
-    - glass-card containers on every section (glassmorphism)
-    - Section headers with colored icons (indigo) reading like flashy widgets
-    - DB cards as identical rounded-2xl tiles with border-hover effects
-    - "Enter Query Workspace" as a full-width indigo ghost button inside each card
-
-  Fix:
-    - Clean page header with plain text, no gradient
-    - Left panel ("Register") as a simple surface-raised block, no decorative header icon
-    - DB list renders as a clean table-style list with left metadata and a right action
-    - Action button is compact (icon only + label), right-aligned, not full-width
-    - Hover on each row: subtle bg lift only
-*/
 export const Dashboard = ({ userRole, onSelectDatabase }) => {
   const [databases, setDatabases] = useState([]);
+  const [selectedDbIds, setSelectedDbIds] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMsg, setErrorMsg]   = useState('');
 
@@ -29,6 +15,10 @@ export const Dashboard = ({ userRole, onSelectDatabase }) => {
     try {
       const data = await api.get('/database/list');
       setDatabases(data);
+      // Auto-select all by default if non-empty
+      if (data.length > 0) {
+        setSelectedDbIds(data.map(d => d.id));
+      }
     } catch (err) {
       setErrorMsg(err.message || 'Failed to load databases.');
     } finally {
@@ -40,9 +30,9 @@ export const Dashboard = ({ userRole, onSelectDatabase }) => {
 
   const handleDelete = async (id, name) => {
     if (!window.confirm(`Delete "${name}"? This action cannot be undone.`)) return;
-    // Optimistic UI update — remove immediately so there is 0 lag
     const previousDatabases = databases;
     setDatabases((prev) => prev.filter((db) => db.id !== id));
+    setSelectedDbIds((prev) => prev.filter(dbId => dbId !== id));
 
     try {
       await api.delete(`/database/${id}`);
@@ -50,6 +40,25 @@ export const Dashboard = ({ userRole, onSelectDatabase }) => {
       setDatabases(previousDatabases);
       alert(err.message || 'Failed to delete database.');
     }
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedDbIds.length === databases.length) {
+      setSelectedDbIds([]);
+    } else {
+      setSelectedDbIds(databases.map(d => d.id));
+    }
+  };
+
+  const toggleSelectOne = (id) => {
+    setSelectedDbIds(prev =>
+      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+    );
+  };
+
+  const handleQuerySelected = () => {
+    if (selectedDbIds.length === 0) return;
+    onSelectDatabase(selectedDbIds);
   };
 
   const isUploader = userRole === 'admin' || userRole === 'analyst';
@@ -60,7 +69,7 @@ export const Dashboard = ({ userRole, onSelectDatabase }) => {
       {/* Page Header */}
       <div>
         <h1 className="page-title">Database Registry</h1>
-        <p className="page-subtitle">Manage data sources and vector search indexes.</p>
+        <p className="page-subtitle">Manage data sources and vector search indexes. Select multiple files to query cross-table JOINs at once.</p>
       </div>
 
       <div
@@ -109,13 +118,49 @@ export const Dashboard = ({ userRole, onSelectDatabase }) => {
               alignItems: 'center',
               justifyContent: 'space-between',
               marginBottom: 16,
+              gap: 12,
+              flexWrap: 'wrap',
             }}>
-              <p style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                Your databases
-              </p>
-              <span className="badge badge-neutral">
-                {databases.length} {databases.length === 1 ? 'source' : 'sources'}
-              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <p style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                  Your databases
+                </p>
+                <span className="badge badge-neutral">
+                  {databases.length} {databases.length === 1 ? 'source' : 'sources'}
+                </span>
+              </div>
+
+              {databases.length > 0 && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <button
+                    onClick={toggleSelectAll}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--text-muted)',
+                      fontSize: '0.78rem',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      fontWeight: 500,
+                    }}
+                  >
+                    {selectedDbIds.length === databases.length ? <CheckSquare size={13} /> : <Square size={13} />}
+                    {selectedDbIds.length === databases.length ? 'Deselect all' : 'Select all'}
+                  </button>
+
+                  <button
+                    onClick={handleQuerySelected}
+                    disabled={selectedDbIds.length === 0}
+                    className="btn-primary"
+                    style={{ height: 32, padding: '0 14px', fontSize: '0.78rem', gap: 6 }}
+                  >
+                    <Terminal size={13} />
+                    Query Selected ({selectedDbIds.length})
+                  </button>
+                </div>
+              )}
             </div>
 
             {errorMsg && (
@@ -140,10 +185,6 @@ export const Dashboard = ({ userRole, onSelectDatabase }) => {
                 <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
               </div>
             ) : databases.length === 0 ? (
-              /*
-                Why: Old empty state used a large dashed border box with huge padding.
-                Fix: Compact inline empty state — just a muted message. No theatrics.
-              */
               <div
                 style={{
                   padding: '32px 0',
@@ -162,105 +203,107 @@ export const Dashboard = ({ userRole, onSelectDatabase }) => {
                 </p>
               </div>
             ) : (
-              /*
-                Why: Old layout used a 2-col grid of identical rounded cards — every
-                card the same visual weight, the same border, the same hover glow.
-                This creates visual monotony that screams "template."
-
-                Fix: A vertical list where each row has:
-                  - DB name (primary, left)
-                  - Metadata inline below (format badge, row count, date)
-                  - "Open" action compact on the right
-                  - Delete icon revealed on row hover (already had this — keep it)
-
-                This reads like a real product's data table, not a portfolio card grid.
-              */
               <div style={{ display: 'flex', flexDirection: 'column' }}>
-                {databases.map((db, idx) => (
-                  <div
-                    key={db.id}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: 12,
-                      padding: '12px 0',
-                      borderTop: idx === 0 ? '1px solid var(--border-subtle)' : '1px solid var(--border-subtle)',
-                      transition: 'background 0.12s',
-                    }}
-                    className="group"
-                  >
-                    {/* Left: info */}
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <p style={{
-                        fontSize: '0.875rem',
-                        fontWeight: 500,
-                        color: 'var(--text-primary)',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                        marginBottom: 4,
-                      }} title={db.name}>
-                        {db.name}
-                      </p>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-                        <span className="badge badge-accent">
-                          {db.file_format.toUpperCase()}
-                        </span>
-                        <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                          <Layers size={11} />
-                          {db.row_count.toLocaleString()} rows
-                        </span>
-                        <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                          <Calendar size={11} />
-                          {new Date(db.created_at).toLocaleDateString()}
-                        </span>
+                {databases.map((db, idx) => {
+                  const isChecked = selectedDbIds.includes(db.id);
+                  return (
+                    <div
+                      key={db.id}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: 12,
+                        padding: '12px 10px',
+                        borderRadius: 6,
+                        background: isChecked ? 'rgba(var(--accent-rgb, 99, 102, 241), 0.05)' : 'transparent',
+                        borderTop: idx === 0 ? '1px solid var(--border-subtle)' : '1px solid var(--border-subtle)',
+                        transition: 'background 0.12s',
+                      }}
+                      className="group"
+                    >
+                      {/* Checkbox + Info */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0, flex: 1 }}>
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => toggleSelectOne(db.id)}
+                          style={{ accentColor: 'var(--accent)', cursor: 'pointer', width: 15, height: 15 }}
+                        />
+
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <p style={{
+                            fontSize: '0.875rem',
+                            fontWeight: isChecked ? 600 : 500,
+                            color: 'var(--text-primary)',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            marginBottom: 4,
+                            cursor: 'pointer',
+                          }} title={db.name} onClick={() => toggleSelectOne(db.id)}>
+                            {db.name}
+                          </p>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                            <span className="badge badge-accent">
+                              {db.file_format.toUpperCase()}
+                            </span>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                              <Layers size={11} />
+                              {db.row_count.toLocaleString()} rows
+                            </span>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                              <Calendar size={11} />
+                              {new Date(db.created_at).toLocaleDateString()}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Right: actions */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                        <button
+                          onClick={() => handleDelete(db.id, db.name)}
+                          title={`Delete ${db.name}`}
+                          style={{
+                            background: 'rgba(239, 68, 68, 0.1)',
+                            border: '1px solid rgba(239, 68, 68, 0.25)',
+                            cursor: 'pointer',
+                            color: '#ef4444',
+                            padding: '4px 8px',
+                            borderRadius: 4,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            fontSize: '0.75rem',
+                            fontWeight: 500,
+                            transition: 'all 0.15s ease',
+                          }}
+                          onMouseEnter={e => {
+                            e.currentTarget.style.background = '#ef4444';
+                            e.currentTarget.style.color = '#ffffff';
+                          }}
+                          onMouseLeave={e => {
+                            e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)';
+                            e.currentTarget.style.color = '#ef4444';
+                          }}
+                        >
+                          <Trash2 size={13} />
+                          Delete
+                        </button>
+
+                        <button
+                          onClick={() => onSelectDatabase(db.id, db.name)}
+                          className="btn-secondary"
+                          style={{ height: 30, padding: '0 10px', fontSize: '0.75rem', gap: 5 }}
+                        >
+                          Open
+                          <ArrowRight size={12} />
+                        </button>
                       </div>
                     </div>
-
-                    {/* Right: actions */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                      <button
-                        onClick={() => handleDelete(db.id, db.name)}
-                        title={`Delete ${db.name}`}
-                        style={{
-                          background: 'rgba(239, 68, 68, 0.1)',
-                          border: '1px solid rgba(239, 68, 68, 0.25)',
-                          cursor: 'pointer',
-                          color: '#ef4444',
-                          padding: '4px 8px',
-                          borderRadius: 4,
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 4,
-                          fontSize: '0.75rem',
-                          fontWeight: 500,
-                          transition: 'all 0.15s ease',
-                        }}
-                        onMouseEnter={e => {
-                          e.currentTarget.style.background = '#ef4444';
-                          e.currentTarget.style.color = '#ffffff';
-                        }}
-                        onMouseLeave={e => {
-                          e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)';
-                          e.currentTarget.style.color = '#ef4444';
-                        }}
-                      >
-                        <Trash2 size={13} />
-                        Delete
-                      </button>
-
-                      <button
-                        onClick={() => onSelectDatabase(db.id, db.name)}
-                        className="btn-secondary"
-                        style={{ height: 30, padding: '0 10px', fontSize: '0.75rem', gap: 5 }}
-                      >
-                        Open
-                        <ArrowRight size={12} />
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
