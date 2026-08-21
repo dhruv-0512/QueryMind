@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 import chromadb
 from app.config import settings
 from app.utils.embeddings import get_embedding, get_embeddings_batch, get_query_embedding
@@ -107,10 +107,11 @@ class RagService:
             logger.error(f"Failed to delete schemas from ChromaDB for database {db_id}: {e}")
             raise e
 
-    async def retrieve_schema_context(self, db_id: str, query: str, limit: int = 5) -> str:
+    async def retrieve_schema_context(self, db_id: str, query: str, limit: int = 5, schema_info: Optional[Dict[str, Any]] = None) -> str:
         """
         Embed the user query, search ChromaDB for top relevant tables,
         and combine them into a single string context.
+        When schema_info is provided, also retrieves connected tables via FK graph.
         """
         self._ensure_connected()
 
@@ -124,11 +125,35 @@ class RagService:
             )
 
             retrieved_chunks = []
+            retrieved_table_names = set()
             if results and "documents" in results and results["documents"]:
-                # results['documents'] is a list of lists of strings
                 for docs in results["documents"]:
                     for doc in docs:
                         retrieved_chunks.append(doc)
+                        # Extract table name from chunk
+                        import re
+                        m = re.search(r'Table:\s*"([^"]+)"', doc)
+                        if m:
+                            retrieved_table_names.add(m.group(1).lower())
+
+            # Relationship-aware expansion: pull in FK-connected tables
+            if schema_info and retrieved_table_names:
+                try:
+                    from app.services.relationship_service import relationship_service
+                    fk_graph = relationship_service.build_fk_graph(schema_info)
+                    connected = relationship_service.get_connected_tables(
+                        list(retrieved_table_names), fk_graph, max_hops=2
+                    )
+                    missing = connected - retrieved_table_names
+                    if missing:
+                        logger.info(f"[RAG EXPANSION] Adding {missing} via FK graph")
+                        # Get chunks for missing tables from schema_info directly
+                        chunks_by_table = {c["table_name"].lower(): c["chunk_text"] for c in schema_info.get("chunks", [])}
+                        for tbl in missing:
+                            if tbl in chunks_by_table:
+                                retrieved_chunks.append(chunks_by_table[tbl])
+                except Exception as expand_err:
+                    logger.warning(f"[RAG EXPANSION] Failed: {expand_err}")
 
             context_string = "\n\n".join(retrieved_chunks)
             return context_string

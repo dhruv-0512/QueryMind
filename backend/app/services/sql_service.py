@@ -135,6 +135,10 @@ class SqlService:
         schema_context: str,
     ) -> Optional[str]:
         """Map retrieved SQL structure onto the user's schema (RAG-first path)."""
+        # Skip RAG-direct for JOIN queries — can't reliably adapt multi-table patterns
+        if re.search(r'\bJOIN\b', example_sql, re.IGNORECASE) and example_sql.lower().count('join') > 0:
+            logger.info("RAG direct skipped: example SQL contains JOINs (multi-table adaptation unreliable)")
+            return None
         target_table = self._extract_table_from_schema(schema_context)
         schema_cols = self._extract_columns_from_schema(schema_context)
         if not target_table or not schema_cols:
@@ -161,7 +165,11 @@ class SqlService:
             flags=re.IGNORECASE,
         )
 
-        tokens = set(re.findall(r"\b[a-zA-Z_][a-zA-Z0-9_]*\b", adapted))
+        # Strip string literals before extracting column identifier tokens so values aren't mistaken for missing columns
+        sql_no_literals = re.sub(r"'[^']*'", "''", adapted)
+        sql_no_literals = re.sub(r'"[^"]*"', '""', sql_no_literals)
+
+        tokens = set(re.findall(r"\b[a-zA-Z_][a-zA-Z0-9_]*\b", sql_no_literals))
         col_map = {}
         for token in tokens:
             low = token.lower()
@@ -224,7 +232,8 @@ class SqlService:
         schema_context: str,
         user_question: str,
         retrieved_examples: List[Dict[str, Any]],
-        validation_feedback: Optional[str] = None
+        validation_feedback: Optional[str] = None,
+        relationship_map: str = ""
     ) -> str:
         examples_block = ""
         if retrieved_examples:
@@ -251,9 +260,11 @@ class SqlService:
         if validation_feedback:
             feedback_block = f"\nCRITICAL REGENERATION FEEDBACK FROM PREVIOUS ATTEMPT:\n{validation_feedback}\n"
 
+        relationship_section = ("\n" + relationship_map + "\n") if relationship_map else ""
+
         return f"""LIVE UPLOADED DATABASE SCHEMA (AUTHORITATIVE SOURCE OF TRUTH):
 {schema_context}
-
+{relationship_section}
 {examples_block}
 {feedback_block}
 USER QUESTION:
@@ -261,10 +272,11 @@ USER QUESTION:
 
 STRICT SCHEMA GROUNDING RULES:
 1. Grounding Rule: The LIVE UPLOADED DATABASE SCHEMA above is the ONLY ground truth.
-2. Template Rule: LOGICAL SQL TEMPLATE EXAMPLES are strictly structural references (WHERE, JOIN, GROUP BY, ORDER BY). Do NOT copy table or column names from template examples unless they exist in the live schema!
-3. Identifier Rule: Use ONLY table names and column names that explicitly exist in the live schema. Every table name and column name MUST be enclosed in double quotes (e.g., "column_name", "table_name").
-4. Unmatched Field Rule: If the user question requests a field or attribute that does NOT exist in the live schema, set "sql": null, "error": "The uploaded database does not contain the requested field.", "confidence": 0.0.
-5. Generate valid PostgreSQL SELECT queries only.
+2. Template Rule: LOGICAL SQL TEMPLATE EXAMPLES are strictly structural references. Do NOT copy table or column names.
+3. Identifier Rule: Use ONLY table names and column names in the live schema. Enclose all identifiers in double quotes.
+4. JOIN Rule: When joining tables, use explicit JOIN ... ON syntax. Use only FK relationships shown in the schema above.
+5. Unmatched Field Rule: If a field does not exist, set sql: null.
+6. Generate valid PostgreSQL SELECT queries only. Prefer explicit JOIN over comma joins.
 
 Return JSON format:
 {{
@@ -280,7 +292,8 @@ Return JSON format:
         schema_context: str,
         user_question: str,
         retrieved_examples: List[Dict[str, Any]] = None,
-        validation_feedback: Optional[str] = None
+        validation_feedback: Optional[str] = None,
+        relationship_map: str = ""
     ) -> Dict[str, Any]:
         retrieved_examples = retrieved_examples or []
 
@@ -321,7 +334,7 @@ Return JSON format:
             }
 
         if self.llm_provider == "deepseek":
-            prompt = self._build_rag_prompt(schema_context, user_question, retrieved_examples, validation_feedback)
+            prompt = self._build_rag_prompt(schema_context, user_question, retrieved_examples, validation_feedback, relationship_map)
             headers = {
                 "Authorization": f"Bearer {settings.DEEPSEEK_API_KEY}",
                 "Content-Type": "application/json",
@@ -377,7 +390,7 @@ Return JSON format:
         if not self.model:
             raise RuntimeError("Gemini API client is not configured.")
 
-        prompt = self._build_rag_prompt(schema_context, user_question, retrieved_examples, validation_feedback)
+        prompt = self._build_rag_prompt(schema_context, user_question, retrieved_examples, validation_feedback, relationship_map)
 
         try:
             # Raises CircuitOpenError immediately if Gemini has failed 5x in a row.
@@ -439,12 +452,23 @@ Return JSON format:
         sql: str,
         max_rows: int = 1000,
         timeout: float = 30.0,
+        extra_schemas: List[str] = None,
     ) -> Tuple[List[Dict[str, Any]], float]:
         start = time.time()
         # PostgreSQL silently truncates unquoted identifiers to 63 chars.
         # Truncate here so SET search_path matches the actual stored schema name.
         safe_schema = schema_name.strip()[:63] if schema_name else "public"
-        await session.execute(text(f"SET LOCAL search_path TO {safe_schema}, public"))
+
+        # Build search_path including all datasource schemas
+        schemas_for_path = [safe_schema]
+        if extra_schemas:
+            for s in extra_schemas:
+                s_safe = s.strip()[:63]
+                if s_safe not in schemas_for_path:
+                    schemas_for_path.append(s_safe)
+        schemas_for_path.append("public")
+        search_path_str = ", ".join(schemas_for_path)
+        await session.execute(text(f"SET LOCAL search_path TO {search_path_str}"))
 
         try:
             result = await asyncio.wait_for(

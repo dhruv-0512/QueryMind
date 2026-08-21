@@ -8,7 +8,7 @@ import { useQueryHistory } from '../hooks/useQueryHistory';
 
 export const QueryWorkspace = ({ selectedDbId }) => {
   const [databases,   setDatabases]   = useState([]);
-  const [activeDbId,  setActiveDbId]  = useState('');
+  const [activeDbIds, setActiveDbIds] = useState([]);
   const [question,    setQuestion]    = useState('');
   const [isLoading,   setIsLoading]   = useState(false);
   const [errorMsg,    setErrorMsg]    = useState('');
@@ -24,9 +24,9 @@ export const QueryWorkspace = ({ selectedDbId }) => {
         const data = await api.get('/database/list');
         setDatabases(data);
         if (selectedDbId) {
-          setActiveDbId(selectedDbId);
+          setActiveDbIds([selectedDbId]);
         } else if (data.length > 0) {
-          setActiveDbId(data[0].id);
+          setActiveDbIds([data[0].id]);
         }
       } catch (err) {
         console.error('Failed to retrieve databases:', err);
@@ -36,32 +36,32 @@ export const QueryWorkspace = ({ selectedDbId }) => {
   }, [selectedDbId]);
 
   const handleDeleteDatabase = async () => {
-    if (!activeDbId) return;
-    const dbObj = databases.find(d => d.id === activeDbId);
+    if (activeDbIds.length !== 1) return;
+    const targetId = activeDbIds[0];
+    const dbObj = databases.find(d => d.id === targetId);
     const dbName = dbObj ? dbObj.name : 'this database';
     if (!window.confirm(`Delete database "${dbName}"? This cannot be undone.`)) return;
 
     const previousDatabases = databases;
-    const targetId = activeDbId;
     const updated = databases.filter(d => d.id !== targetId);
 
     // Optimistic UI update
     setDatabases(updated);
-    setActiveDbId(updated.length > 0 ? updated[0].id : '');
+    setActiveDbIds(updated.length > 0 ? [updated[0].id] : []);
     setQueryResult(null);
 
     try {
       await api.delete(`/database/${targetId}`);
     } catch (err) {
       setDatabases(previousDatabases);
-      setActiveDbId(targetId);
+      setActiveDbIds([targetId]);
       alert(err.message || 'Failed to delete database.');
     }
   };
 
   const handleQuery = async (e) => {
     e.preventDefault();
-    if (!activeDbId) { setErrorMsg('Please select a database to query.'); return; }
+    if (activeDbIds.length === 0) { setErrorMsg('Please select at least one database to query.'); return; }
     if (!question.trim()) return;
 
     // Save to history, then clear the textarea (terminal behaviour — prompt empties after run)
@@ -73,7 +73,11 @@ export const QueryWorkspace = ({ selectedDbId }) => {
     setQueryResult(null);
 
     try {
-      const response = await api.post('/query', { db_id: activeDbId, question: question.trim() });
+      // Use db_ids array for multi-select, or db_id for backward compat with single
+      const payload = activeDbIds.length === 1
+        ? { db_id: activeDbIds[0], question: question.trim() }
+        : { db_ids: activeDbIds, question: question.trim() };
+      const response = await api.post('/query', payload);
       setQueryResult(response);
     } catch (err) {
       setErrorMsg(err.message || 'An error occurred during query execution.');
@@ -129,41 +133,88 @@ export const QueryWorkspace = ({ selectedDbId }) => {
 
           <form onSubmit={handleQuery} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
 
-            {/* Database select */}
+            {/* Multi-select datasource list */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-              <label style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-secondary)' }}>
-                Data source
-              </label>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <div style={{ position: 'relative', flex: 1 }}>
-                  <Database
-                    size={13}
-                    style={{
-                      position: 'absolute',
-                      left: 10,
-                      top: '50%',
-                      transform: 'translateY(-50%)',
-                      color: 'var(--text-muted)',
-                      pointerEvents: 'none',
-                    }}
-                  />
-                  <select
-                    value={activeDbId}
-                    onChange={(e) => setActiveDbId(e.target.value)}
-                    className="input-field"
-                    style={{ paddingLeft: 30, appearance: 'none', cursor: 'pointer' }}
-                    disabled={isLoading}
-                  >
-                    {databases.length === 0 && (
-                      <option value="">No databases registered</option>
-                    )}
-                    {databases.map((db) => (
-                      <option key={db.id} value={db.id}>{db.name}</option>
-                    ))}
-                  </select>
-                </div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <label style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-secondary)' }}>
+                  Data sources
+                </label>
+                {activeDbIds.length > 1 && (
+                  <span style={{
+                    fontSize: '0.7rem',
+                    background: 'var(--accent)',
+                    color: '#fff',
+                    borderRadius: 10,
+                    padding: '1px 7px',
+                    fontWeight: 600,
+                  }}>
+                    {activeDbIds.length} selected
+                  </span>
+                )}
+              </div>
 
-                {activeDbId && (
+              <div style={{
+                border: '1px solid var(--border-subtle)',
+                borderRadius: 6,
+                overflow: 'hidden',
+                maxHeight: 150,
+                overflowY: 'auto',
+              }}>
+                {databases.length === 0 ? (
+                  <div style={{ padding: '10px 12px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                    No databases registered
+                  </div>
+                ) : (
+                  databases.map((db) => {
+                    const isChecked = activeDbIds.includes(db.id);
+                    return (
+                      <label
+                        key={db.id}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 8,
+                          padding: '7px 12px',
+                          cursor: 'pointer',
+                          background: isChecked ? 'rgba(var(--accent-rgb, 99, 102, 241), 0.08)' : 'transparent',
+                          borderBottom: '1px solid var(--border-subtle)',
+                          transition: 'background 0.1s',
+                          fontSize: '0.82rem',
+                          color: isChecked ? 'var(--text-primary)' : 'var(--text-secondary)',
+                          fontWeight: isChecked ? 500 : 400,
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          disabled={isLoading}
+                          onChange={() => {
+                            setActiveDbIds(prev =>
+                              prev.includes(db.id)
+                                ? prev.filter(id => id !== db.id)
+                                : [...prev, db.id]
+                            );
+                          }}
+                          style={{ accentColor: 'var(--accent)', flexShrink: 0 }}
+                        />
+                        <Database size={11} style={{ flexShrink: 0, opacity: 0.7 }} />
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {db.name}
+                        </span>
+                      </label>
+                    );
+                  })
+                )}
+              </div>
+
+              {activeDbIds.length > 5 && (
+                <p style={{ fontSize: '0.72rem', color: 'var(--color-warning, #f59e0b)', marginTop: 2 }}>
+                  ⚠ Querying more than 5 datasources at once may be slow
+                </p>
+              )}
+
+              {activeDbIds.length === 1 && (
+                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                   <button
                     type="button"
                     onClick={handleDeleteDatabase}
@@ -173,32 +224,25 @@ export const QueryWorkspace = ({ selectedDbId }) => {
                       background: 'rgba(239, 68, 68, 0.1)',
                       border: '1px solid rgba(239, 68, 68, 0.25)',
                       color: '#ef4444',
-                      padding: '0 10px',
-                      height: 38,
+                      padding: '3px 10px',
+                      height: 28,
                       borderRadius: 6,
                       display: 'flex',
                       alignItems: 'center',
                       gap: 5,
-                      fontSize: '0.75rem',
+                      fontSize: '0.72rem',
                       fontWeight: 500,
                       cursor: 'pointer',
                       transition: 'all 0.15s ease',
-                      flexShrink: 0,
                     }}
-                    onMouseEnter={e => {
-                      e.currentTarget.style.background = '#ef4444';
-                      e.currentTarget.style.color = '#ffffff';
-                    }}
-                    onMouseLeave={e => {
-                      e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)';
-                      e.currentTarget.style.color = '#ef4444';
-                    }}
+                    onMouseEnter={e => { e.currentTarget.style.background = '#ef4444'; e.currentTarget.style.color = '#ffffff'; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'; e.currentTarget.style.color = '#ef4444'; }}
                   >
-                    <Trash2 size={13} />
+                    <Trash2 size={11} />
                     Delete
                   </button>
-                )}
-              </div>
+                </div>
+              )}
             </div>
 
             {/* Question textarea */}
@@ -228,14 +272,14 @@ export const QueryWorkspace = ({ selectedDbId }) => {
                 placeholder="e.g. List the top 5 customers by revenue in Q1 2025"
                 rows={4}
                 className="input-field"
-                disabled={isLoading || databases.length === 0}
+                disabled={isLoading || activeDbIds.length === 0}
                 required
               />
             </div>
 
             <button
               type="submit"
-              disabled={isLoading || databases.length === 0}
+              disabled={isLoading || activeDbIds.length === 0}
               className="btn-primary"
               style={{ width: '100%', height: 36 }}
             >
@@ -363,6 +407,15 @@ export const QueryWorkspace = ({ selectedDbId }) => {
                     {queryResult.cached ? 'Hit' : 'Miss'}
                   </span>
                 </div>
+                {queryResult.datasources_used && queryResult.datasources_used.length > 1 && (
+                  <>
+                    <div style={{ width: 1, background: 'var(--border-subtle)', alignSelf: 'stretch' }} />
+                    <div className="status-item">
+                      <span className="status-item-label">Sources</span>
+                      <span className="status-item-value">{queryResult.datasources_used.length}</span>
+                    </div>
+                  </>
+                )}
               </div>
 
               {/* SQL Viewer */}

@@ -124,8 +124,11 @@ def validate_sql_query(
                 logger.warning(f"SQL validation error: Table '{tbl}' does not exist in schema. Valid tables: {list(normalized_schema.keys())}")
                 return False, f"Invalid schema reference: Table '{tbl}' does not exist in the database schema.", tbl
 
-        # Build available columns set across all referenced tables
-        available_cols = set()
+        # Collect select column aliases (e.g., SELECT col AS alias, SUM(...) AS total)
+        select_aliases = {a.alias.lower() for a in parsed.find_all(exp.Alias) if a.alias}
+
+        # Build available columns set across all referenced tables + select aliases
+        available_cols = set(select_aliases)
         for tbl in referenced_tables:
             available_cols.update(normalized_schema[tbl])
 
@@ -136,6 +139,10 @@ def validate_sql_query(
                 continue
 
             table_qualifier = col_node.table.lower() if col_node.table else None
+            # If qualified by a CTE or subquery table alias, ignore raw table check
+            if table_qualifier and table_qualifier in cte_names:
+                continue
+
             if table_qualifier and table_qualifier in normalized_schema:
                 if col_name not in normalized_schema[table_qualifier]:
                     logger.warning(f"SQL validation error: Column '{col_name}' does not exist in table '{table_qualifier}'.")

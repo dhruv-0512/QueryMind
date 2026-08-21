@@ -1,3 +1,4 @@
+import json
 import hashlib
 import logging
 from typing import Dict, Any, List
@@ -84,6 +85,14 @@ class SqlExampleRetrievalService:
                 "pattern_type": ex.get("pattern_type", "unknown"),
                 "complexity": ex.get("complexity", "unknown"),
                 "source": ex["source"],
+                # Extended multi-table metadata
+                "difficulty": ex.get("difficulty", ""),
+                "join_count": ex.get("join_count", 0),
+                "join_type": ex.get("join_type", ""),
+                "has_aggregation": ex.get("has_aggregation", False),
+                "has_subquery": ex.get("has_subquery", False),
+                "has_cte": ex.get("has_cte", False),
+                "has_self_join": ex.get("has_self_join", False),
             })
             documents.append(ex["question"])
 
@@ -122,6 +131,14 @@ class SqlExampleRetrievalService:
                     "complexity": meta.get("complexity"),
                     "source": meta.get("source"),
                     "similarity": round(_distance_to_similarity(distance), 4),
+                    # Extended multi-table metadata
+                    "difficulty": meta.get("difficulty", ""),
+                    "join_count": meta.get("join_count", 0),
+                    "join_type": meta.get("join_type", ""),
+                    "has_aggregation": meta.get("has_aggregation", False),
+                    "has_subquery": meta.get("has_subquery", False),
+                    "has_cte": meta.get("has_cte", False),
+                    "has_self_join": meta.get("has_self_join", False),
                 })
         return retrieved
 

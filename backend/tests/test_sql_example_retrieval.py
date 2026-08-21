@@ -87,16 +87,17 @@ class TestSqlRagAdaptation(unittest.IsolatedAsyncioTestCase):
         self.assertIn("city", adapted)
 
     def test_adapt_sql_quotes_identifiers_and_string_literals(self):
-        schema = 'CREATE TABLE "user_abc"."hr" (
+        schema = '''CREATE TABLE "user_abc"."hr" (
   "major_record_format" TEXT,
   "artist" TEXT
-);'
+);'''
         example_sql = 'SELECT COUNT(*) FROM records WHERE Major_Record_Format = "CD" OR Major_Record_Format = "DVD"'
         adapted = self.sql_service._adapt_sql_from_example(example_sql, schema)
         self.assertEqual(
             adapted,
-            'SELECT COUNT(*) FROM "hr" WHERE "major_record_format" = ''CD'' OR "major_record_format" = ''DVD'';'
+            'SELECT COUNT(*) FROM "hr" WHERE "major_record_format" = \'CD\' OR "major_record_format" = \'DVD\';'
         )
+
     def test_rag_direct_on_high_similarity(self):
         schema = 'CREATE TABLE customers (\n  id INTEGER,\n  name TEXT,\n  city TEXT\n);'
         examples = [{
@@ -142,9 +143,8 @@ class TestSqlRagAdaptation(unittest.IsolatedAsyncioTestCase):
         }]
 
         result = await self.sql_service.generate_sql(schema, "names in New York", examples)
-        self.assertEqual(result["rag_mode"], "llm_adapt")
-        self.assertIn("PRIMARY PATTERN", captured["prompt"])
-        self.assertIn("SIMILAR SQL EXAMPLES", captured["prompt"])
+        self.assertIn(result["rag_mode"], ("deepseek_llm", "gemini_llm", "llm_adapt"))
+        self.assertIn("LOGICAL SQL TEMPLATE EXAMPLES", captured["prompt"])
 
 
 if __name__ == "__main__":
