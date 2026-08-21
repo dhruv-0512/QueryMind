@@ -96,32 +96,25 @@ On upload:
 
 ## Benchmark & Evaluation
 
-Evaluation harnesses and benchmark scripts are available under `evaluation/`:
+### Evaluation & Testing
 
-- **Standard Baseline (`evaluation/evaluate.py`)**: Evaluates NL paraphrasing, schema grounding, and SQL injection security.
-- **Multi-Table Benchmark (`evaluation/evaluate_multitable.py`)**: Tests 2-table, 3-table, and 4-table JOINs across multi-table schema relationships.
+QueryMind includes a dedicated evaluation harness and automated test suite under `evaluation/` and `backend/tests/`.
 
-### Evaluation Results
+The evaluation harness covers:
 
-| Evaluation | Result |
-|---|---:|
-| Standard baseline | 93.88% (46/49) |
-| Multi-table benchmark | 100% (43/43) |
-| 2-table JOINs | 100% (22/22) |
-| 3-table JOINs | 100% (18/18) |
-| 4-table JOINs | 100% (3/3) |
-| SQL injection blocking | 100% (4/4) |
-| Backend test suite | 38/38 |
+- Natural-language query handling
+- Schema grounding
+- Multi-table JOIN workflows
+- 2-, 3-, and 4-table query scenarios
+- SQL validation and security checks
+- Multi-datasource execution
 
-QueryMind achieved 100% execution accuracy on the 43-query multi-table benchmark. The multi-table benchmark evaluates queries requiring 2-, 3-, and 4-table joins across related relational schemas. The standard baseline evaluates schema grounding, natural-language query handling, and SQL security checks.
+The repository includes the benchmark datasets, evaluation scripts, generated reports, and test cases so the system can be evaluated and reproduced locally.
 
-To run evaluation scripts locally:
+Evaluation scripts:
 
 ```bash
-# Run baseline evaluation
 python evaluation/evaluate.py
-
-# Run multi-table benchmark
 python evaluation/evaluate_multitable.py
 ```
 
