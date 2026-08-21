@@ -94,37 +94,22 @@ On upload:
 
 ## Benchmark & Evaluation
 
-QueryMind includes two automated evaluation harnesses:
+Evaluation harnesses and benchmark scripts are available under `evaluation/`:
 
-1. **Standard Unseen Paraphrase Benchmark (`evaluation/evaluate.py`)**: Tests NL paraphrasing, schema grounding, and read-only security.
-2. **Multi-Table Benchmark (`evaluation/evaluate_multitable.py`)**: Tests 2-table, 3-table, and 4-table JOINs, `LEFT JOIN`s, `CTE`s, `HAVING` clauses, and aggregations against the 6-table aviation database.
+- **Standard Baseline (`evaluation/evaluate.py`)**: Evaluates NL paraphrasing, schema grounding, and SQL injection security.
+- **Multi-Table Benchmark (`evaluation/evaluate_multitable.py`)**: Tests 2-table, 3-table, and 4-table JOINs across multi-table schema relationships.
 
-### Benchmark Metrics Summary
-
-| Benchmark Suite | Metric | Score | Target Standard | Status |
-| :--- | :--- | :--- | :--- | :--- |
-| **Standard Baseline** | **Execution Accuracy** | **`93.88%`** | `> 85.0%` | **PASSED** |
-| **Standard Baseline** | **Semantic Answer Accuracy** | **`93.88%`** | `> 80.0%` | **PASSED** |
-| **Standard Baseline** | **Top-1 / Top-5 Retrieval Recall** | **`100.0%`** | `> 90.0%` | **PASSED** |
-| **Standard Baseline** | **SQL Injection Block Rate** | **`100.0%`** | `100.0%` | **SECURE** |
-| **Multi-Table Benchmark** | **2-Table JOIN Accuracy** | **`100.0%`** | `> 80.0%` | **PASSED** |
-| **Multi-Table Benchmark** | **3-Table JOIN Accuracy** | **`100.0%`** | `> 80.0%` | **PASSED** |
-| **Multi-Table Benchmark** | **4-Table / Complex JOIN Accuracy** | **`100.0%`** | `> 75.0%` | **PASSED** |
-| **Multi-Table Benchmark** | **LEFT JOIN Accuracy** | **`100.0%`** | `> 80.0%` | **PASSED** |
-| **Multi-Table Benchmark** | **CTE (`WITH ...`) Accuracy** | **`100.0%`** | `> 75.0%` | **PASSED** |
-| **Multi-Table Benchmark** | **Overall Multi-Table Accuracy** | **`100.0%`** | `> 80.0%` | **PASSED** |
-
-### Running Benchmark Harnesses Locally
+To run evaluation scripts locally:
 
 ```bash
-# Run standard baseline evaluation
+# Run baseline evaluation
 python evaluation/evaluate.py
 
-# Run dedicated multi-table evaluation benchmark
+# Run multi-table benchmark
 python evaluation/evaluate_multitable.py
 ```
 
-All benchmark markdown reports and JSON metrics are stored in [`evaluation/results/`](file:///C:/Users/dhruv/Desktop/PROJECTS/New%20folder%20%287%29/evaluation/results).
+Detailed test outputs, generated reports, and raw benchmark metrics can be found in the [`evaluation/results/`](evaluation/results) folder.
 
 ## How It Works: Multi-File Upload & Cross-Table PostgreSQL Engine
 
