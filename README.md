@@ -167,11 +167,11 @@ User confirmation
      ↓
 Relationship graph & BFS expansion
      ↓
-Semantic complexity routing (Direct RAG vs LLM)
+Semantic routing (Fast Path vs RAG Composition vs LLM)
      ↓
-DeepSeek / Gemini SQL generation
+RAG facet composition & AST constraint validation
      ↓
-sqlglot AST validation & PostgreSQL execution
+PostgreSQL execution (or DeepSeek fallback on validation failure)
 ```
 
 1. Users upload one or more supported datasets.
@@ -181,11 +181,11 @@ sqlglot AST validation & PostgreSQL execution
 5. Detected candidates are shown to the user for confirmation.
 6. Confirmed relationships are added to the relationship graph.
 7. BFS traversal expands relevant connected table context.
-8. Complexity routing determines whether to execute via Direct Fast Path or route to LLM.
-9. ChromaDB RAG retrieves relevant schema and SQL examples.
-10. DeepSeek/Gemini generates the SQL query.
-11. sqlglot validates the generated SQL AST.
-12. PostgreSQL executes the query across the selected schemas and returns results.
+8. Semantic routing determines whether the query can be handled by the deterministic fast path, RAG composition, or LLM fallback.
+9. ChromaDB retrieves relevant schema and SQL examples.
+10. RAG composition extracts and combines reusable SQL facets using live schema and confirmed FK/relationship graph context.
+11. sqlglot parses the composed SQL and the semantic constraint validator verifies that the SQL preserves the natural-language query's constraints.
+12. If validation succeeds, the composed SQL executes directly in PostgreSQL; if RAG cannot safely satisfy the constraints, the query falls back to DeepSeek/Gemini generation followed by SQL validation.
 
 ## Environment Variables
 
