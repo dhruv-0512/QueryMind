@@ -221,7 +221,7 @@ class SqlService:
         r'having|join|where|filter|when|whose|with|who|which|'
         r'greater\s+than|higher\s+than|more\s+than|above|'
         r'less\s+than|lower\s+than|below|under|'
-        r'delivered|shipped|pending|cancelled|completed|status|'
+        r'delivered|shipped|pending|cancelled|completed|finished|status|'
         r'chennai|mumbai|delhi|new\s+york|bangalore|city|state|country|'
         r'category|electronics|furniture|kitchen|stationery|'
         r'in\s+the|under\s+the|from\s+the|named\s+|called\s+|'
@@ -316,10 +316,10 @@ class SqlService:
         # 3. Detect Aggregate Operation (AVG, SUM, MIN, MAX)
         op = None
         op_func = None
-        if re.search(r'\b(average|avg|mean)\b', q_clean):
+        if re.search(r'\b(average|avg|mean|overall\s+average)\b', q_clean):
             op = "avg"
             op_func = "AVG"
-        elif re.search(r'\b(total\s+(?:amount|revenue|spend|sales|value)|sum)\b', q_clean):
+        elif re.search(r'\b(grand\s+total|overall\s+(?:[\w-]+\s+)?(?:amount|value|revenue|spend|sales|cost|spending)|total\s+(?:[\w-]+\s+)?(?:amount|value|revenue|spend|sales|cost|spending|price)|sum(?:\s+of)?|aggregate\s+(?:[\w-]+\s+)?(?:amount|value|revenue|spend|sales|cost))\b', q_clean):
             op = "sum"
             op_func = "SUM"
         elif re.search(r'\b(minimum|min|lowest|smallest)\b', q_clean):
@@ -342,10 +342,13 @@ class SqlService:
                     return None
                 target_col = col
 
-        # Synonym fallback if only 1 numeric column exists in table
+        # Synonym fallback if only 1 summable measure column exists in table
         if not target_col:
             numeric_cols = [c for c in schema_cols if col_types.get(c.lower(), "") in self.NUMERIC_TYPES]
-            if len(numeric_cols) == 1 and re.search(r'\b(amount|spending|price|cost|revenue|sales|val|value)\b', q_clean):
+            measure_cols = [c for c in numeric_cols if not c.lower().endswith(('_id', '_key', '_pk', '_fk')) and c.lower() != 'id']
+            if len(measure_cols) == 1 and re.search(r'\b(amounts?|spendings?|prices?|costs?|revenues?|sales?|vals?|values?|monetary|totals?)\b', q_clean):
+                target_col = measure_cols[0]
+            elif len(numeric_cols) == 1 and re.search(r'\b(amounts?|spendings?|prices?|costs?|revenues?|sales?|vals?|values?|monetary|totals?)\b', q_clean):
                 target_col = numeric_cols[0]
 
         if not target_col:
