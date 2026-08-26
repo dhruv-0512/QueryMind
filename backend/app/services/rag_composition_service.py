@@ -193,17 +193,22 @@ class RagCompositionService:
                 logger.info("Composition skipped: Cannot resolve join path across tables -> Fallback to LLM")
                 return None
 
+        def _resolve_owner_table(col_name: str) -> Optional[str]:
+            for t in table_list:
+                if col_name in tables_meta.get(t, {}):
+                    return t
+            for t, cols in tables_meta.items():
+                if col_name in cols:
+                    return t
+            return None
+
         # 2. Build SELECT Projection
         select_parts: List[str] = []
 
         # A. Grouping projection
         if target_constraints.group_by:
             for g_col in target_constraints.group_by.columns:
-                owner_tbl = None
-                for t in table_list:
-                    if g_col in tables_meta.get(t, {}):
-                        owner_tbl = t
-                        break
+                owner_tbl = _resolve_owner_table(g_col)
                 prefix = f'{aliases[owner_tbl]}.' if owner_tbl and len(table_list) > 1 else ''
                 select_parts.append(f'{prefix}"{g_col}"')
 
@@ -242,20 +247,16 @@ class RagCompositionService:
                     if func in ("SUM", "AVG", "MIN", "MAX") and c_name in TEXT_COLUMNS:
                         logger.info(f"Composition skipped: {func}({c_name}) on text column -> Fallback to LLM")
                         return None
-                    owner_tbl = None
-                    for t in table_list:
-                        if c_name in tables_meta.get(t, {}):
-                            # Verify column is numeric
-                            col_type = tables_meta[t].get(c_name, "")
-                            is_num = (any(k in col_type for k in NUMERIC_KEYWORDS) or c_name in ("amount", "price", "cost", "quantity", "unit_price"))
-                            if func in ("SUM", "AVG", "MIN", "MAX") and not is_num:
-                                logger.info(f"Composition skipped: {func}({c_name}) is non-numeric column (type={col_type}) -> Fallback to LLM")
-                                return None
-                            owner_tbl = t
-                            break
+                    owner_tbl = _resolve_owner_table(c_name)
                     if owner_tbl is None and func in ("SUM", "AVG", "MIN", "MAX"):
                         logger.info(f"Composition skipped: {func}({c_name}) column not found in schema -> Fallback to LLM")
                         return None
+                    if owner_tbl:
+                        col_type = tables_meta.get(owner_tbl, {}).get(c_name, "")
+                        is_num = (any(k in col_type for k in NUMERIC_KEYWORDS) or c_name in ("amount", "price", "cost", "quantity", "unit_price"))
+                        if func in ("SUM", "AVG", "MIN", "MAX") and not is_num:
+                            logger.info(f"Composition skipped: {func}({c_name}) is non-numeric column (type={col_type}) -> Fallback to LLM")
+                            return None
                     prefix = f'{aliases[owner_tbl]}.' if owner_tbl and len(table_list) > 1 else ''
                     select_parts.append(f'{func}({prefix}"{c_name}")')
 
@@ -287,11 +288,7 @@ class RagCompositionService:
 
                 ordered_cols = sorted(target_constraints.columns, key=_col_sort_key)
                 for req_col in ordered_cols:
-                    owner_tbl = None
-                    for t in table_list:
-                        if req_col in tables_meta.get(t, {}):
-                            owner_tbl = t
-                            break
+                    owner_tbl = _resolve_owner_table(req_col)
                     if owner_tbl:
                         prefix = f'{aliases[owner_tbl]}.' if len(table_list) > 1 else ''
                         col_proj = f'{prefix}"{req_col}"'
@@ -329,10 +326,7 @@ class RagCompositionService:
             # Find table owner
             owner_tbl = flt.table
             if not owner_tbl:
-                for t, cols in tables_meta.items():
-                    if t in target_constraints.tables and col in cols:
-                        owner_tbl = t
-                        break
+                owner_tbl = _resolve_owner_table(col)
 
             prefix = f'{aliases[owner_tbl]}.' if owner_tbl and len(table_list) > 1 else ''
 
@@ -370,11 +364,7 @@ class RagCompositionService:
         if target_constraints.group_by:
             grp_cols_sql = []
             for g_col in target_constraints.group_by.columns:
-                owner_tbl = None
-                for t, cols in tables_meta.items():
-                    if t in target_constraints.tables and g_col in cols:
-                        owner_tbl = t
-                        break
+                owner_tbl = _resolve_owner_table(g_col)
                 prefix = f'{aliases[owner_tbl]}.' if owner_tbl and len(table_list) > 1 else ''
                 grp_cols_sql.append(f'{prefix}"{g_col}"')
             group_sql = " GROUP BY " + ", ".join(grp_cols_sql)
@@ -398,11 +388,7 @@ class RagCompositionService:
                         p_cols = list(tables_meta.get(primary_table, {}).keys())
                         meas_cols = [c for c in p_cols if c in ("amount", "quantity", "unit_price", "price", "total")]
                         agg_c = meas_cols[0] if meas_cols else p_cols[0]
-                    owner_tbl = None
-                    for t in table_list:
-                        if agg_c in tables_meta.get(t, {}):
-                            owner_tbl = t
-                            break
+                    owner_tbl = _resolve_owner_table(agg_c)
                     prefix = f'{aliases[owner_tbl]}.' if owner_tbl and len(table_list) > 1 else ''
                     ord_parts.append(f'{agg_func}({prefix}"{agg_c}") {direction}')
                 elif col == "*":
@@ -417,11 +403,7 @@ class RagCompositionService:
                         prefix = f'{aliases[primary_table]}.' if len(table_list) > 1 else ''
                         ord_parts.append(f'{prefix}"{meas[0]}" {direction}')
                 else:
-                    owner_tbl = None
-                    for t in table_list:
-                        if col in tables_meta.get(t, {}):
-                            owner_tbl = t
-                            break
+                    owner_tbl = _resolve_owner_table(col)
                     prefix = f'{aliases[owner_tbl]}.' if owner_tbl and len(table_list) > 1 else ''
                     ord_parts.append(f'{prefix}"{col}" {direction}')
             if ord_parts:

@@ -611,3 +611,27 @@ def test_fix7_bestselling_products_ranking():
     assert '"order_items"' in sql
     assert "SUM(" in sql.upper()
     assert "LIMIT 2" in sql.upper()
+
+
+def test_postgresql_group_by_alias_parity():
+    """Verify that table aliases in SELECT and GROUP BY match exactly to prevent PostgreSQL GroupingError."""
+    # Test query that joins customers and orders and groups by customer_id
+    nl_c = constraint_extraction_service.extract_query_constraints(
+        "Show total spending for each customer ID.", FULL_SCHEMA_CONTEXT
+    )
+    nl_c.tables.add("customers")
+    nl_c.tables.add("orders")
+    comp = rag_composition_service.compose_sql(nl_c, [], FULL_SCHEMA_CONTEXT)
+    assert comp is not None
+    sql = comp["sql"]
+    
+    # Extract projected dimension and grouped dimension
+    # SELECT <dim>, SUM(...) FROM customers c JOIN orders o ... GROUP BY <dim>
+    import re
+    select_match = re.search(r'SELECT\s+([a-zA-Z0-9_]+)\."customer_id"', sql)
+    group_match = re.search(r'GROUP\s+BY\s+([a-zA-Z0-9_]+)\."customer_id"', sql)
+    assert select_match is not None, f"SELECT customer_id not found in {sql}"
+    assert group_match is not None, f"GROUP BY customer_id not found in {sql}"
+    assert select_match.group(1) == group_match.group(1), (
+        f"Alias mismatch! SELECT uses '{select_match.group(1)}' but GROUP BY uses '{group_match.group(1)}' in {sql}"
+    )
