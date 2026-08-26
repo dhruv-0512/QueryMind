@@ -42,7 +42,7 @@ def _get_local_model():
             from fastembed import TextEmbedding
 
             logger.info("Loading local embedding model BAAI/bge-small-en-v1.5...")
-            _local_model = TextEmbedding(model_name="BAAI/bge-small-en-v1.5")
+            _local_model = TextEmbedding(model_name="BAAI/bge-small-en-v1.5", threads=1)
             logger.info("Local embedding model ready.")
         return _local_model
 

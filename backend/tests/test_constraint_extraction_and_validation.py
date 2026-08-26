@@ -12,6 +12,7 @@ from app.services.constraint_extraction_service import (
     JoinConstraint,
 )
 from app.utils.constraint_validator import compare_constraints
+from app.services.rag_composition_service import rag_composition_service
 
 SCHEMA_CONTEXT = """
 CREATE TABLE "customers" (
@@ -142,7 +143,8 @@ CREATE TABLE "products" (
     "product_id" INTEGER PRIMARY KEY,
     "product_name" VARCHAR,
     "category" VARCHAR,
-    "price" NUMERIC
+    "price" NUMERIC,
+    "stock" INTEGER
 );
 
 CREATE TABLE "order_items" (
@@ -368,3 +370,244 @@ def test_adversarial_unresolved_multihop():
     sql_c = constraint_extraction_service.extract_sql_constraints('SELECT * FROM "customers"')
     passed, missing, altered = compare_constraints(nl_c, sql_c)
     assert not passed, f"Multi-hop resolved to single table: missing={missing}, altered={altered}"
+
+
+# ── Phase 1 RAG-First Composition Regression Tests ─────────────────────────
+
+def test_phase1_join_entity_projection():
+    """Query: 'Show me every order ID and the name of the customer who placed it.'"""
+    q = "Show me every order ID and the name of the customer who placed it."
+    nl_c = constraint_extraction_service.extract_query_constraints(q, FULL_SCHEMA_CONTEXT)
+    assert "orders" in nl_c.tables
+    assert "customers" in nl_c.tables
+    assert "order_id" in nl_c.columns
+    assert "name" in nl_c.columns
+
+    comp = rag_composition_service.compose_sql(nl_c, [], FULL_SCHEMA_CONTEXT)
+    assert comp is not None, "Failed to compose JOIN entity projection"
+    sql = comp["sql"]
+    assert "JOIN" in sql.upper()
+    assert '"order_id"' in sql
+    assert '"name"' in sql
+
+    sql_c = constraint_extraction_service.extract_sql_constraints(sql)
+    passed, missing, altered = compare_constraints(nl_c, sql_c)
+    assert passed, f"Validator failed on composed JOIN entity projection: missing={missing}, altered={altered}"
+
+
+def test_phase1_join_aggregation_group_by():
+    """Query: 'Show the total amount spent by each customer.'"""
+    q = "Show the total amount spent by each customer."
+    nl_c = constraint_extraction_service.extract_query_constraints(q, FULL_SCHEMA_CONTEXT)
+    assert "orders" in nl_c.tables
+    assert "customers" in nl_c.tables
+    assert any(a["func"] == "SUM" for a in nl_c.aggregations)
+
+    ex = [{
+        "question": "For each customer, show their total spending.",
+        "sql": "SELECT customer_id, sum(amount) FROM orders GROUP BY customer_id;",
+        "pattern_type": "group_by",
+        "similarity": 0.85
+    }]
+    comp = rag_composition_service.compose_sql(nl_c, ex, FULL_SCHEMA_CONTEXT)
+    assert comp is not None, "Failed to compose JOIN aggregation with GROUP BY"
+    sql = comp["sql"]
+    assert "JOIN" in sql.upper()
+    assert "SUM" in sql.upper()
+    assert "GROUP BY" in sql.upper()
+
+    sql_c = constraint_extraction_service.extract_sql_constraints(sql)
+    passed, missing, altered = compare_constraints(nl_c, sql_c)
+    assert passed, f"Validator failed on JOIN group by aggregation: missing={missing}, altered={altered}"
+
+
+def test_phase1_join_filter_aggregation():
+    """Query: 'What is the total amount of orders placed by customers from Chennai?'"""
+    q = "What is the total amount of orders placed by customers from Chennai?"
+    nl_c = constraint_extraction_service.extract_query_constraints(q, FULL_SCHEMA_CONTEXT)
+    assert "orders" in nl_c.tables
+    assert "customers" in nl_c.tables
+    assert any(f.column == "city" and f.value == "Chennai" for f in nl_c.filters)
+    assert any(a["func"] == "SUM" for a in nl_c.aggregations)
+
+    comp = rag_composition_service.compose_sql(nl_c, [], FULL_SCHEMA_CONTEXT)
+    assert comp is not None, "Failed to compose JOIN with filter and aggregation"
+    sql = comp["sql"]
+    assert "JOIN" in sql.upper()
+    assert "WHERE" in sql.upper()
+    assert "Chennai" in sql
+    assert "SUM" in sql.upper()
+
+    sql_c = constraint_extraction_service.extract_sql_constraints(sql)
+    passed, missing, altered = compare_constraints(nl_c, sql_c)
+    assert passed, f"Validator failed on JOIN filter aggregation: missing={missing}, altered={altered}"
+
+
+def test_phase1_rag_assisted_table_grounding():
+    """Query: 'How many purchase records are there in total?'"""
+    q = "How many purchase records are there in total?"
+    nl_c = constraint_extraction_service.extract_query_constraints(q, FULL_SCHEMA_CONTEXT)
+    # Target constraints should contain orders table (either through alias map or RAG grounding)
+    ex = [{
+        "question": "How many orders are there in total?",
+        "sql": "SELECT count(*) FROM orders;",
+        "pattern_type": "aggregation",
+        "similarity": 0.80
+    }]
+    comp = rag_composition_service.compose_sql(nl_c, ex, FULL_SCHEMA_CONTEXT)
+    assert comp is not None, "Failed to compose table grounded query"
+    sql = comp["sql"]
+    assert "COUNT(*)" in sql.upper()
+    assert '"orders"' in sql
+
+    sql_c = constraint_extraction_service.extract_sql_constraints(sql)
+    passed, missing, altered = compare_constraints(nl_c, sql_c)
+    assert passed, f"Validator failed on table grounding: missing={missing}, altered={altered}"
+
+
+def test_phase1_multi_example_facet_composition():
+    """Query composing JOIN from Example A, GROUP BY from Example B, SUM from Example C."""
+    q = "Show customer names and total amount spent by each customer."
+    nl_c = constraint_extraction_service.extract_query_constraints(q, FULL_SCHEMA_CONTEXT)
+    examples = [
+        {"question": "Show customer names and their order amounts.", "sql": "SELECT T1.name, T2.amount FROM customers T1 JOIN orders T2 ON T1.customer_id = T2.customer_id;", "similarity": 0.80},
+        {"question": "For each customer, show their total spending.", "sql": "SELECT customer_id, sum(amount) FROM orders GROUP BY customer_id;", "similarity": 0.82},
+    ]
+    comp = rag_composition_service.compose_sql(nl_c, examples, FULL_SCHEMA_CONTEXT)
+    assert comp is not None, "Failed multi-example facet composition"
+    sql = comp["sql"]
+    assert "JOIN" in sql.upper()
+    assert "SUM" in sql.upper()
+
+    sql_c = constraint_extraction_service.extract_sql_constraints(sql)
+    passed, missing, altered = compare_constraints(nl_c, sql_c)
+    assert passed, f"Validator failed on multi-example composition: missing={missing}, altered={altered}"
+
+
+# ── Targeted Minimal Safety Regression Tests (Fixes 1–7) ───────────────
+
+def test_fix1_entity_projection_predicate_guard():
+    """Benchmark #10: 'Find all orders with amount greater than 500' -> SELECT * FROM orders WHERE amount > 500."""
+    q = "Find all orders with amount greater than 500."
+    nl_c = constraint_extraction_service.extract_query_constraints(q, FULL_SCHEMA_CONTEXT)
+    comp = rag_composition_service.compose_sql(nl_c, [], FULL_SCHEMA_CONTEXT, question=q)
+    assert comp is not None
+    sql = comp["sql"]
+    assert "SELECT * FROM \"orders\"" in sql
+    assert '"amount" > 500' in sql
+    sql_c = constraint_extraction_service.extract_sql_constraints(sql)
+    passed, missing, altered = compare_constraints(nl_c, sql_c)
+    assert passed, f"Validator failed: missing={missing}, altered={altered}"
+
+
+def test_fix2_temporal_constraint_safety_gate():
+    """Benchmark #13: 'Show delivered orders placed in March 2024' -> Must mark temporal_constraint and reject RAG composition."""
+    q = "Show delivered orders placed in March 2024."
+    nl_c = constraint_extraction_service.extract_query_constraints(q, FULL_SCHEMA_CONTEXT)
+    assert "temporal_constraint" in nl_c.unresolved_facets
+    assert nl_c.has_subquery
+    comp = rag_composition_service.compose_sql(nl_c, [], FULL_SCHEMA_CONTEXT, question=q)
+    assert comp is None, "RAG composition must NOT execute when temporal constraint is dropped"
+
+
+def test_fix3_multiple_numeric_filters_binding_and_adversarial():
+    """Benchmark #14 & Adversarial: Correct column binding for multiple numeric filters."""
+    # Test 1: price < 50 AND stock > 50
+    q1 = "List products with price under 50 and stock greater than 50."
+    nl_c1 = constraint_extraction_service.extract_query_constraints(q1, FULL_SCHEMA_CONTEXT)
+    cols_bound = {f.column: (f.operator, f.value) for f in nl_c1.filters if f.column}
+    assert cols_bound.get("price") == ("<", 50.0)
+    assert cols_bound.get("stock") == (">", 50.0)
+    comp1 = rag_composition_service.compose_sql(nl_c1, [], FULL_SCHEMA_CONTEXT, question=q1)
+    assert comp1 is not None
+    sql1 = comp1["sql"]
+    assert '"price" < 50.0' in sql1 or '"price" < 50' in sql1
+    assert '"stock" > 50.0' in sql1 or '"stock" > 50' in sql1
+
+    # Test 2: Adversarial schema with salary and age
+    adv_schema = """
+    CREATE TABLE "employees" (
+        "emp_id" INTEGER PRIMARY KEY,
+        "salary" NUMERIC,
+        "age" INTEGER
+    );
+    """
+    q2 = "Show employees with salary over 50000 and age under 30."
+    nl_c2 = constraint_extraction_service.extract_query_constraints(q2, adv_schema)
+    cols_bound2 = {f.column: (f.operator, f.value) for f in nl_c2.filters if f.column}
+    assert cols_bound2.get("salary") == (">", 50000.0)
+    assert cols_bound2.get("age") == ("<", 30.0)
+
+    # Test 3: Adversarial schema with amount and quantity
+    adv_schema_items = """
+    CREATE TABLE "items" (
+        "item_id" INTEGER PRIMARY KEY,
+        "amount" NUMERIC,
+        "quantity" INTEGER
+    );
+    """
+    q3 = "Find items with amount greater than 100 and quantity less than 5."
+    nl_c3 = constraint_extraction_service.extract_query_constraints(q3, adv_schema_items)
+    cols_bound3 = {f.column: (f.operator, f.value) for f in nl_c3.filters if f.column}
+    assert cols_bound3.get("amount") == (">", 100.0)
+    assert cols_bound3.get("quantity") == ("<", 5.0)
+
+
+def test_fix4_aggregate_threshold_having_gate():
+    """Benchmark #22: 'Show customers with total spending greater than 1000' -> Must mark aggregate_threshold_having and reject RAG."""
+    q = "Show customers with total spending greater than 1000."
+    nl_c = constraint_extraction_service.extract_query_constraints(q, FULL_SCHEMA_CONTEXT)
+    assert "aggregate_threshold_having" in nl_c.unresolved_facets
+    assert nl_c.has_subquery
+    comp = rag_composition_service.compose_sql(nl_c, [], FULL_SCHEMA_CONTEXT, question=q)
+    assert comp is None, "RAG composition must NOT compose a row-level WHERE amount > 1000 for aggregate thresholds"
+
+
+def test_fix5_spending_superlative_safety():
+    """Benchmark #33 & Safety S3: 'Which customer has spent the most?' -> Must NEVER produce customers-only ORDER BY name query."""
+    q = "Which customer has spent the most?"
+    nl_c = constraint_extraction_service.extract_query_constraints(q, FULL_SCHEMA_CONTEXT)
+    assert "customers" in nl_c.tables
+    assert "orders" in nl_c.tables
+    assert any(a["func"] == "SUM" for a in nl_c.aggregations)
+
+    comp = rag_composition_service.compose_sql(nl_c, [], FULL_SCHEMA_CONTEXT, question=q)
+    if comp:
+        sql = comp["sql"]
+        # Must NEVER be a single-table customers query or sort by customer name
+        assert '"orders"' in sql
+        assert "SUM(" in sql.upper()
+        assert "ORDER BY SUM(" in sql.upper() or "ORDER BY TOTAL" in sql.upper()
+        assert 'ORDER BY "name"' not in sql
+
+
+def test_fix6_top_customers_by_spending_with_cities():
+    """Benchmark #36: 'Show the top 3 customers by total spending with their cities'."""
+    q = "Show the top 3 customers by total spending with their cities."
+    nl_c = constraint_extraction_service.extract_query_constraints(q, FULL_SCHEMA_CONTEXT)
+    assert "customers" in nl_c.tables
+    assert "orders" in nl_c.tables
+    assert nl_c.limit == 3
+    comp = rag_composition_service.compose_sql(nl_c, [], FULL_SCHEMA_CONTEXT, question=q)
+    assert comp is not None
+    sql = comp["sql"]
+    assert "JOIN" in sql.upper()
+    assert "SUM(" in sql.upper()
+    assert "GROUP BY" in sql.upper()
+    assert "LIMIT 3" in sql.upper()
+
+
+def test_fix7_bestselling_products_ranking():
+    """Benchmark #39: 'Show top 2 best-selling products by quantity' -> Must group by product and order by SUM(quantity) DESC."""
+    q = "Show top 2 best-selling products by quantity."
+    nl_c = constraint_extraction_service.extract_query_constraints(q, FULL_SCHEMA_CONTEXT)
+    assert "products" in nl_c.tables
+    assert "order_items" in nl_c.tables
+    assert nl_c.limit == 2
+    comp = rag_composition_service.compose_sql(nl_c, [], FULL_SCHEMA_CONTEXT, question=q)
+    assert comp is not None
+    sql = comp["sql"]
+    assert '"products"' in sql
+    assert '"order_items"' in sql
+    assert "SUM(" in sql.upper()
+    assert "LIMIT 2" in sql.upper()

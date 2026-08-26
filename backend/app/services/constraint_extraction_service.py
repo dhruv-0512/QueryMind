@@ -329,7 +329,7 @@ class ConstraintExtractionService:
         if live_values:
             sample_values.update(live_values)
 
-        # 1. Detect Tables Mentioned (including multi-word phrases)
+        # 1. Detect Tables Mentioned (including multi-word phrases & domain aliases)
         table_aliases_map = {
             "order item": "order_items",
             "order items": "order_items",
@@ -341,6 +341,12 @@ class ConstraintExtractionService:
             "orders": "orders",
             "product": "products",
             "products": "products",
+            "purchase record": "orders",
+            "purchase records": "orders",
+            "purchase": "orders",
+            "purchases": "orders",
+            "sale": "orders",
+            "sales": "orders",
         }
         for phrase, tbl_target in table_aliases_map.items():
             if tbl_target in tables_meta and re.search(rf'\b{re.escape(phrase)}\b', q_clean):
@@ -351,28 +357,129 @@ class ConstraintExtractionService:
             if re.search(rf'\b{re.escape(tbl_low)}(?:s|es)?\b', q_clean):
                 constraints.tables.add(tbl_low)
 
-        # 2. Detect Columns Mentioned
+        # 2. Detect Columns Mentioned (including underscore and multi-word variations)
         all_cols_map: Dict[str, str] = {}
+        col_to_owners: Dict[str, List[str]] = {}
         for tbl, cols in tables_meta.items():
             for c in cols.keys():
-                all_cols_map[c.lower()] = tbl.lower()
-                if re.search(rf'\b{re.escape(c.lower())}(?:s|es)?\b', q_clean):
-                    constraints.columns.add(c.lower())
-                    constraints.tables.add(tbl.lower())
+                c_low = c.lower()
+                col_to_owners.setdefault(c_low, []).append(tbl.lower())
+                if c_low not in all_cols_map or c_low.startswith(tbl.lower().rstrip('s')):
+                    all_cols_map[c_low] = tbl.lower()
+
+        for c_low, owners in col_to_owners.items():
+            matched = False
+            if c_low.endswith("y"):
+                stem = c_low[:-1]
+                pattern = rf'\b(?:{re.escape(stem)}ies|{re.escape(c_low)}(?:s|es)?)\b'
+            else:
+                pattern = rf'\b{re.escape(c_low)}(?:s|es)?\b'
+
+            if re.search(pattern, q_clean):
+                matched = True
+            else:
+                c_words = c_low.replace("_", " ")
+                if c_words != c_low:
+                    if c_words.endswith("y"):
+                        stem_w = c_words[:-1]
+                        pattern_w = rf'\b(?:{re.escape(stem_w)}ies|{re.escape(c_words)}(?:s|es)?)\b'
+                    else:
+                        pattern_w = rf'\b{re.escape(c_words)}(?:s|es)?\b'
+                    if re.search(pattern_w, q_clean):
+                        matched = True
+
+            if matched:
+                is_entity_query = bool(re.search(r'\b(find|show|list|get|retrieve|display)\s+(?:all\s+)?(?:the\s+)?(?:orders?|customers?|products?|items?|records?)\b', q_clean))
+                has_explicit_projection = bool(re.search(r'\b(?:names?|cities|city|order_ids?|product_names?|ids?|status(?:es)?|categories|category)\s+(?:and|with|of)\b|\b(?:names?|cities|city|order_ids?|product_names?|ids?|status(?:es)?|categories|category)\s+of\b', q_clean))
+                in_predicate = bool(re.search(rf'\b{re.escape(c_low)}\s*(?:>|<|=|is|greater|less|under|over|above|below|between|in|\bwith\s+{re.escape(c_low)})\b', q_clean))
+
+                # For pure entity retrieval queries, predicate-only columns should not become projection columns
+                if not (is_entity_query and in_predicate and not has_explicit_projection):
+                    constraints.columns.add(c_low)
+
+                if len(owners) == 1:
+                    constraints.tables.add(owners[0])
+                else:
+                    pref_owner = None
+                    for o in owners:
+                        if o in constraints.tables:
+                            pref_owner = o
+                            break
+                        if c_low.startswith(o.rstrip('s')):
+                            pref_owner = o
+                    if not pref_owner:
+                        pref_owner = owners[0]
+                    constraints.tables.add(pref_owner)
+
+        # Specific semantic phrases for names
+        if re.search(r'\b(customer\s+name|name\s+of\s+the\s+customer|name\s+of\s+customer)\b', q_clean):
+            constraints.columns.add("name")
+            constraints.tables.add("customers")
+        elif re.search(r'\b(product\s+name|name\s+of\s+the\s+product|name\s+of\s+product)\b', q_clean):
+            constraints.columns.add("product_name")
+            constraints.tables.add("products")
+
+        # Temporal / Date range expressions that cannot be deterministically translated into exact filters -> Safety Gate
+        temporal_pattern = r'\b(in\s+(?:january|february|march|april|may|june|july|august|september|october|november|december)(?:\s+\d{4})?|during\s+[a-z]+|last\s+(?:year|month|week)|this\s+(?:month|year|week)|between\s+[a-zA-Z0-9\s]+\s+and\s+[a-zA-Z0-9\s]+|q[1-4]\s+\d{4}|in\s+20\d{2}|in\s+19\d{2}|placed\s+in\s+[a-zA-Z]+|signed\s+up\s+in\s+[a-zA-Z]+)\b'
+        if re.search(temporal_pattern, q_clean):
+            constraints.has_subquery = True
+            constraints.unresolved_facets.append("temporal_constraint")
 
         # Check for complex comparison subqueries (e.g. "higher than the average", "above average", "never ordered", "distinct")
         if re.search(r'\b(above\s+(?:the\s+)?average|higher\s+than\s+(?:the\s+)?average|greater\s+than\s+(?:the\s+)?average|more\s+than\s+(?:the\s+)?average|below\s+(?:the\s+)?average|lower\s+than\s+(?:the\s+)?average|never\s+placed|never\s+ordered|never\s+been|not\s+in|percentage|percent|relative\s+to|ratio|highest\s+average|lowest\s+average|distinct)\b', q_clean):
             constraints.has_subquery = True
             constraints.unresolved_facets.append("subquery_comparison")
 
-        if not constraints.has_subquery:
+        # Detect spending superlative phrases (e.g. "spent the most", "highest spending", "biggest spender", "top spender")
+        spending_superlative = re.search(r'\b(spent\s+the\s+most|highest\s+spending|greatest\s+spending|biggest\s+spender|top\s+spender|most\s+money\s+spent|spent\s+most)\b', q_clean)
+        if spending_superlative:
+            constraints.tables.add("customers")
+            constraints.tables.add("orders")
+            constraints.columns.add("name" if "name" in all_cols_map else "customer_id")
+            constraints.aggregations.append({"func": "SUM", "column": "amount"})
+            constraints.group_by = GroupByConstraint(columns=["name" if "name" in all_cols_map else "customer_id"])
+            constraints.order_by.append(OrderByConstraint(column="amount", direction="DESC"))
+            constraints.limit = 1
+
+        # Detect top entities by spending (e.g. "top 3 customers by total spending", "top 3 customers by total spending with their cities")
+        top_spending_match = re.search(r'\btop\s+(\d+)?\s*(?:customers|users|people|clients)?\s*by\s+(?:total\s+)?spending(?:\s+with\s+their\s+(?:cities|city))?\b', q_clean)
+        if top_spending_match:
+            m_lim = re.search(r'\btop\s+(\d+)\b', q_clean)
+            lim_val = int(m_lim.group(1)) if m_lim else 3
+            constraints.tables.add("customers")
+            constraints.tables.add("orders")
+            constraints.columns.add("name" if "name" in all_cols_map else "customer_id")
+            if re.search(r'\b(?:cities|city)\b', q_clean):
+                constraints.columns.add("city")
+                constraints.group_by = GroupByConstraint(columns=["name" if "name" in all_cols_map else "customer_id", "city"])
+            else:
+                constraints.group_by = GroupByConstraint(columns=["name" if "name" in all_cols_map else "customer_id"])
+            constraints.aggregations.append({"func": "SUM", "column": "amount"})
+            constraints.order_by.append(OrderByConstraint(column="amount", direction="DESC"))
+            constraints.limit = lim_val
+
+        # Detect best-selling / most sold products
+        if re.search(r'\b(best[- ]selling|most\s+sold|highest\s+selling|top\s+selling)\b', q_clean):
+            m_lim = re.search(r'\btop\s+(\d+)\b', q_clean)
+            lim_val = int(m_lim.group(1)) if m_lim else 1
+            constraints.tables.add("products")
+            constraints.tables.add("order_items")
+            constraints.columns.add("product_name" if "product_name" in all_cols_map else "product_id")
+            constraints.aggregations.append({"func": "SUM", "column": "quantity"})
+            constraints.group_by = GroupByConstraint(columns=["product_name" if "product_name" in all_cols_map else "product_id"])
+            constraints.order_by.append(OrderByConstraint(column="quantity", direction="DESC"))
+            constraints.limit = lim_val
+
+        if not constraints.has_subquery and not spending_superlative:
             if re.search(r'\b(count|how\s+many|number\s+of|total\s+(?:number|count))\b', q_clean):
                 constraints.aggregations.append({"func": "COUNT", "column": "*"})
             elif re.search(r'\b(average|avg|mean)\b', q_clean):
                 target_col = self._resolve_target_column(q_clean, constraints.tables, tables_meta, "avg")
                 constraints.aggregations.append({"func": "AVG", "column": target_col or "*"})
-            elif re.search(r'\b(total|sum|grand\s+total|overall\s+(?:amount|value|revenue|spend|cost))\b', q_clean) and not re.search(r'\b(total\s+(?:number|count)\s+of|count)\b', q_clean):
+            elif re.search(r'\b(total|sum|grand\s+total|overall\s+(?:amount|value|revenue|spend|cost)|spending|spend|revenue|sales)\b', q_clean) and not re.search(r'\b(total\s+(?:number|count)\s+of|count)\b', q_clean):
                 target_col = self._resolve_target_column(q_clean, constraints.tables, tables_meta, "sum")
+                if target_col is None and re.search(r'\b(spending|spend|revenue|sales)\b', q_clean):
+                    constraints.unresolved_facets.append("unresolved_spending_measure")
                 constraints.aggregations.append({"func": "SUM", "column": target_col or "*"})
             elif re.search(r'\b(minimum|min|lowest|smallest)\b', q_clean) and not re.search(r'\b\d+\s+(lowest|smallest)\b', q_clean):
                 target_col = self._resolve_target_column(q_clean, constraints.tables, tables_meta, "min")
@@ -423,29 +530,56 @@ class ConstraintExtractionService:
                 constraints.filters.append(FilterConstraint(column="name", table=tbl, operator="=", value=name_val))
                 constraints.tables.add(tbl)
 
-        # Numeric and Date filters
-        num_filter_match = re.search(r'\b(greater\s+than|more\s+than|above|>)\s+(\d+(?:\.\d+)?)\b', q_clean)
-        if num_filter_match:
-            val_num = float(num_filter_match.group(2))
-            constraints.filters.append(FilterConstraint(column="*", operator=">", value=val_num))
+        # Detect aggregate threshold patterns (e.g. "total spending greater than 1000", "spending > 1000", "total amount exceeding 500")
+        if re.search(r'\b(?:total\s+spending|total\s+amount|sum\s+of\s+amount|total\s+revenue|expenditure|spending)\s+(?:greater\s+than|more\s+than|>|above|over|exceeding|less\s+than|<|below|under)\s+\d+', q_clean) or re.search(r'\b(?:greater\s+than|more\s+than|>|above|over|exceeding)\s+\d+\s+(?:in\s+total\s+spending|in\s+spending|in\s+total\s+amount)\b', q_clean):
+            constraints.has_subquery = True
+            constraints.unresolved_facets.append("aggregate_threshold_having")
 
-        num_less_match = re.search(r'\b(less\s+than|under|below|<)\s+(\d+(?:\.\d+)?)\b', q_clean)
-        if num_less_match:
-            val_num = float(num_less_match.group(2))
-            constraints.filters.append(FilterConstraint(column="*", operator="<", value=val_num))
+        # Numeric and Date filters: First extract explicitly column-bound numeric filters
+        bound_filters: List[FilterConstraint] = []
+        for m in re.finditer(r'\b([a-zA-Z_]+)\s*(?:is\s*)?(under|below|less\s+than|<|smaller\s+than)\s*(\d+(?:\.\d+)?)\b', q_clean):
+            c_name = m.group(1).lower()
+            if c_name in all_cols_map:
+                bound_filters.append(FilterConstraint(column=c_name, table=all_cols_map[c_name], operator="<", value=float(m.group(3))))
+        for m in re.finditer(r'\b([a-zA-Z_]+)\s*(?:is\s*)?(over|above|greater\s+than|>|more\s+than|exceeding)\s*(\d+(?:\.\d+)?)\b', q_clean):
+            c_name = m.group(1).lower()
+            if c_name in all_cols_map:
+                bound_filters.append(FilterConstraint(column=c_name, table=all_cols_map[c_name], operator=">", value=float(m.group(3))))
+
+        if bound_filters:
+            for bf in bound_filters:
+                constraints.filters.append(bf)
+                if bf.table:
+                    constraints.tables.add(bf.table)
+        elif "aggregate_threshold_having" not in constraints.unresolved_facets:
+            having_count_match = re.search(r'\b(greater\s+than|more\s+than|above|>)\s+(\d+)\s+(?:orders?|items?|products?|purchases?|records?)\b', q_clean)
+            if having_count_match:
+                constraints.has_subquery = True
+                constraints.unresolved_facets.append("having_clause")
+            else:
+                num_filter_match = re.search(r'\b(greater\s+than|more\s+than|above|>)\s+(\d+(?:\.\d+)?)\b', q_clean)
+                if num_filter_match:
+                    val_num = float(num_filter_match.group(2))
+                    constraints.filters.append(FilterConstraint(column="*", operator=">", value=val_num))
+
+                num_less_match = re.search(r'\b(less\s+than|under|below|<)\s+(\d+(?:\.\d+)?)\b', q_clean)
+                if num_less_match:
+                    val_num = float(num_less_match.group(2))
+                    constraints.filters.append(FilterConstraint(column="*", operator="<", value=val_num))
 
         date_filter_match = re.search(r'\b(after|since|from)\s+([a-zA-Z]+\s+\d{1,2},?\s+\d{4}|\d{4}-\d{2}-\d{2})\b', q_clean)
         if date_filter_match:
             constraints.filters.append(FilterConstraint(column="*", operator=">", value=date_filter_match.group(2)))
 
-        # 5. Detect Grouping Intent ("in each", "for each", "per", "for every", "by")
-        grp_match = re.search(r'\b(for\s+each|in\s+each|for\s+every|per|grouped\s+by)\s+([a-zA-Z_]+)\b', q_clean)
+        # 5. Detect Grouping Intent ("in each", "for each", "by each", "per", "for every", "by every", "grouped by", "breakdown by")
+        # Exclude passive relationship phrasing like "placed by", "ordered by", "purchased by", "bought by"
+        q_no_passive = re.sub(r'\b(placed\s+by|ordered\s+by|purchased\s+by|bought\s+by)\b', '', q_clean)
+        grp_match = re.search(r'\b(?:for\s+each|in\s+each|by\s+each|for\s+every|by\s+every|per|grouped\s+by|breakdown\s+by)\s+([a-zA-Z_]+)\b', q_no_passive)
         if not grp_match:
             # Match "by <optional-modifier> <dimension>" — capture the LAST known dimension word
-            # e.g. "by product category" → "category", "by customer" → "customer"
-            grp_match = re.search(r'\bby\s+(?:[a-zA-Z_]+\s+)?(city|category|status|customer_id|product_name|name)\b', q_clean)
+            grp_match = re.search(r'\bby\s+(?:[a-zA-Z_]+\s+)?(city|category|status|customer_id|product_name|name|customer|customers|product|products)\b', q_no_passive)
             if not grp_match:
-                grp_match = re.search(r'\bby\s+(city|category|status|customer|product|customer_id|product_name)\b', q_clean)
+                grp_match = re.search(r'\bby\s+(city|category|status|customer|customers|product|products|customer_id|product_name|name)\b', q_no_passive)
 
         if grp_match and not re.search(r'\bwithout\s+breaking\s+(?:it\s+)?down\b', q_clean):
             dim_word = grp_match.group(grp_match.lastindex).lower() if grp_match.lastindex else grp_match.group(1).lower()
@@ -471,7 +605,7 @@ class ConstraintExtractionService:
 
         # 6. Detect Ranking & Limit Intent
         limit_match = re.search(r'\b(top|bottom|first|last|\d+\s+(?:lowest|highest|cheapest|most|least))\s*(\d+)?\b', q_clean)
-        if limit_match:
+        if limit_match and not constraints.order_by:
             num = 1
             if limit_match.group(2):
                 num = int(limit_match.group(2))
@@ -486,14 +620,14 @@ class ConstraintExtractionService:
 
             constraints.limit = num
             constraints.order_by.append(OrderByConstraint(column="*", direction=direction))
-        elif re.search(r'\b(most\s+recent|latest|newest|most\s+recent)\b', q_clean):
+        elif re.search(r'\b(most\s+recent|latest|newest|most\s+recent)\b', q_clean) and not constraints.order_by:
             # Temporal superlative → ORDER BY date/time column DESC LIMIT 1
             constraints.limit = 1
             constraints.order_by.append(OrderByConstraint(column="*", direction="DESC"))
-        elif re.search(r'\b(oldest|earliest)\b', q_clean):
+        elif re.search(r'\b(oldest|earliest)\b', q_clean) and not constraints.order_by:
             constraints.limit = 1
             constraints.order_by.append(OrderByConstraint(column="*", direction="ASC"))
-        elif re.search(r'\b(cheapest|most\s+expensive|spent\s+the\s+most|highest|lowest)\b', q_clean) and not constraints.aggregations:
+        elif re.search(r'\b(cheapest|most\s+expensive|highest|lowest)\b', q_clean) and not constraints.aggregations and not constraints.order_by:
             direction = "ASC" if "cheapest" in q_clean or "lowest" in q_clean else "DESC"
             constraints.limit = 1
             constraints.order_by.append(OrderByConstraint(column="*", direction=direction))
@@ -558,7 +692,7 @@ class ConstraintExtractionService:
             detected_tables = set(tables_meta.keys())
 
         # 1. Semantic measure keywords mapping to known measure columns
-        measure_intent = re.search(r'\b(amount|spending|price|cost|revenue|spend|sales|val|value|quantity|ticket\s+size|monetary|total)\b', q_clean)
+        measure_intent = re.search(r'\b(spending|spend|revenue|sales|monetary|ticket\s+size|amount|price|cost|quantity|units|val|value)\b', q_clean)
         
         # 2. Check for exact numeric column mentions in question
         for tbl in detected_tables:
@@ -571,26 +705,30 @@ class ConstraintExtractionService:
 
         # 3. Resolve from semantic keyword (e.g. spending -> amount, price -> price)
         if measure_intent:
-            m_word = measure_intent.group(1)
-            for tbl in detected_tables:
+            m_word = measure_intent.group(1).lower()
+            search_tables = list(detected_tables) + [t for t in tables_meta.keys() if t not in detected_tables]
+            for tbl in search_tables:
                 cols = tables_meta.get(tbl, {})
                 for c, c_type in cols.items():
                     is_num = any(k in c_type for k in numeric_keywords) or c in ("amount", "price", "cost", "quantity", "unit_price")
                     if is_num and not c.endswith(("_id", "_key", "_pk", "_fk")) and c != "id":
-                        if m_word in ("spending", "spend", "revenue", "sales", "amount", "monetary") and "amount" in c:
+                        if m_word in ("spending", "spend", "revenue", "sales", "amount", "monetary") and c in ("amount", "total_amount", "revenue"):
+                            detected_tables.add(tbl)
                             return c
-                        if m_word in ("price", "cost") and "price" in c:
+                        elif m_word in ("price", "cost") and "price" in c:
+                            detected_tables.add(tbl)
                             return c
-                        if m_word in ("quantity", "units") and "quantity" in c:
+                        elif m_word in ("quantity", "units") and "quantity" in c:
+                            detected_tables.add(tbl)
                             return c
-                        return c
 
-        # 4. Fallback to any single numeric measure in detected tables
-        for tbl in detected_tables:
-            cols = tables_meta.get(tbl, {})
-            num_cols = [c for c, c_type in cols.items() if (any(k in c_type for k in numeric_keywords) or c in ("amount", "price", "cost", "quantity")) and not c.endswith(("_id", "_key")) and c != "id"]
-            if len(num_cols) == 1:
-                return num_cols[0]
+        # 4. Fallback to any single numeric measure in detected tables ONLY if measure intent is compatible
+        if not measure_intent or measure_intent.group(1).lower() not in ("spending", "spend", "revenue", "sales"):
+            for tbl in detected_tables:
+                cols = tables_meta.get(tbl, {})
+                num_cols = [c for c, c_type in cols.items() if (any(k in c_type for k in numeric_keywords) or c in ("amount", "price", "cost", "quantity")) and not c.endswith(("_id", "_key")) and c != "id"]
+                if len(num_cols) == 1:
+                    return num_cols[0]
 
         return None
 

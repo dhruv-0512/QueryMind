@@ -80,6 +80,7 @@ class RagCompositionService:
         target_constraints: QueryConstraints,
         retrieved_examples: List[Dict[str, Any]],
         schema_context: str,
+        question: Optional[str] = None,
         fk_graph: Optional[Dict[str, Any]] = None,
         live_values: Optional[Dict[str, List[str]]] = None,
     ) -> Optional[Dict[str, Any]]:
@@ -92,20 +93,45 @@ class RagCompositionService:
         if live_values:
             sample_values.update(live_values)
 
+        # 0a. RAG-Assisted Table Grounding for Paraphrases:
+        # If target_constraints.tables is empty, check if top retrieved examples have grounded tables
+        # that exist in the active schema and have high similarity.
+        if not target_constraints.tables and retrieved_examples:
+            for ex in retrieved_examples[:3]:
+                ex_c = constraint_extraction_service.extract_sql_constraints(ex.get("sql", ""))
+                candidate_tables = [t for t in ex_c.tables if t in tables_meta]
+                if candidate_tables:
+                    for tbl in candidate_tables:
+                        target_constraints.tables.add(tbl)
+                    logger.info(f"RAG-Assisted Table Grounding: Adopted table(s) {candidate_tables} from example '{ex.get('question')}'")
+                    break
+
         if not target_constraints.tables:
             return None
 
+        # 0b. RAG-Assisted Grouping Inference:
+        # Only infer grouping if question has an explicit non-aggregated dimension column requested alongside aggregations
+        agg_cols = {a.get("column", "").lower() for a in target_constraints.aggregations}
+        non_agg_dim_cols = [c for c in target_constraints.columns if c.lower() not in agg_cols and c != "*"]
+        has_grouping_intent = bool(non_agg_dim_cols and target_constraints.aggregations)
+        if not target_constraints.group_by and has_grouping_intent and retrieved_examples:
+            for ex in retrieved_examples[:3]:
+                ex_c = constraint_extraction_service.extract_sql_constraints(ex.get("sql", ""))
+                if ex_c.group_by and ex_c.group_by.columns:
+                    for grp_col in ex_c.group_by.columns:
+                        for tbl in target_constraints.tables:
+                            if grp_col in tables_meta.get(tbl, {}):
+                                target_constraints.group_by = GroupByConstraint(columns=[grp_col])
+                                logger.info(f"RAG-Assisted Grouping: Inferred group_by: {grp_col} from example '{ex.get('question')}'")
+                                break
+                        if target_constraints.group_by:
+                            break
+
         # Level 8 check: Conservative safety envelope
-        # Fall back to LLM for subqueries, unresolved facets, multi-hop joins (>2 tables), or multi-table queries with filters/rankings/entity projections
+        # Fall back to LLM for subqueries, unresolved facets, or multi-hop joins (>2 tables)
         if target_constraints.has_subquery or target_constraints.unresolved_facets or len(target_constraints.tables) > 2:
             logger.info("Composition skipped: Query contains subqueries or multi-hop joins (>2 tables) -> Fallback to LLM")
             return None
-
-        # For 2-table queries, only compose if it is a clean group-by aggregation without filters or rankings
-        if len(target_constraints.tables) == 2:
-            if not target_constraints.group_by or not target_constraints.aggregations or target_constraints.filters or target_constraints.order_by:
-                logger.info("Composition skipped: 2-table query with filters/rankings/entity projection -> Fallback to LLM")
-                return None
 
         # Select facet examples
         facet_examples = self.select_complementary_examples(target_constraints, retrieved_examples)
@@ -116,7 +142,7 @@ class RagCompositionService:
             if target_constraints.group_by and target_constraints.group_by.columns:
                 grp_col = target_constraints.group_by.columns[0]
                 for tbl in table_list:
-                    if grp_col in tables_meta.get(tbl, []):
+                    if grp_col in tables_meta.get(tbl, {}):
                         table_list.remove(tbl)
                         table_list.insert(0, tbl)
                         break
@@ -136,9 +162,9 @@ class RagCompositionService:
 
             joined_tables = {primary_table}
             for tbl in table_list[1:]:
-                p_cols = set(tables_meta.get(primary_table, []))
-                t_cols = set(tables_meta.get(tbl, []))
-                common_keys = [c for c in p_cols.intersection(t_cols) if c.endswith(("_id", "_key")) or c == "id"]
+                p_cols = set(tables_meta.get(primary_table, {}).keys())
+                t_cols = set(tables_meta.get(tbl, {}).keys())
+                common_keys = [c for c in p_cols.intersection(t_cols) if c.endswith(("_id", "_key", "_pk", "_fk")) or c == "id"]
 
                 join_type = "INNER"
                 if target_constraints.joins:
@@ -170,18 +196,18 @@ class RagCompositionService:
         # 2. Build SELECT Projection
         select_parts: List[str] = []
 
-        # Grouping projection
+        # A. Grouping projection
         if target_constraints.group_by:
             for g_col in target_constraints.group_by.columns:
                 owner_tbl = None
                 for t in table_list:
-                    if g_col in tables_meta.get(t, []):
+                    if g_col in tables_meta.get(t, {}):
                         owner_tbl = t
                         break
                 prefix = f'{aliases[owner_tbl]}.' if owner_tbl and len(table_list) > 1 else ''
                 select_parts.append(f'{prefix}"{g_col}"')
 
-        # Aggregation projection
+        # B. Aggregation projection
         NUMERIC_KEYWORDS = ("INT", "NUMERIC", "DECIMAL", "FLOAT", "REAL", "DOUBLE", "BIGINT", "MONEY", "NUMBER")
         TEXT_COLUMNS = {"name", "city", "category", "status", "product_name", "title", "description", "email"}
 
@@ -233,16 +259,51 @@ class RagCompositionService:
                     prefix = f'{aliases[owner_tbl]}.' if owner_tbl and len(table_list) > 1 else ''
                     select_parts.append(f'{func}({prefix}"{c_name}")')
 
+        # C. Explicit Column-Level Entity Projections (e.g. order_id, name across joined tables)
+        if not target_constraints.aggregations and target_constraints.columns:
+            filter_cols = {f.column.lower() for f in target_constraints.filters if f.column and f.column != "*"}
+            order_by_cols = {ob.column.lower() for ob in target_constraints.order_by} if target_constraints.order_by else set()
+            predicate_cols = filter_cols | order_by_cols
+            is_pure_sort_query = (
+                (set(target_constraints.columns) == order_by_cols or "*" in order_by_cols)
+                and len(table_list) == 1
+                and bool(target_constraints.order_by)
+            )
+            is_pure_entity_filter_query = (len(table_list) == 1 and target_constraints.columns.issubset(predicate_cols))
+            if not is_pure_sort_query and not is_pure_entity_filter_query:
+                def _col_sort_key(c: str) -> int:
+                    if question:
+                        q_c = question.lower()
+                        pos = q_c.find(c.replace("_", " "))
+                        if pos == -1:
+                            pos = q_c.find(c)
+                        if pos != -1:
+                            return pos
+                    if c in ("name", "customer_name", "product_name", "city", "category"):
+                        return 0
+                    elif c.endswith("_id") or c == "id":
+                        return 1
+                    return 2
 
-        # Disallow multi-table composition for unaggregated multi-table entity projections (let LLM handle semantic column aliases)
-        if len(table_list) > 1 and not target_constraints.aggregations and not target_constraints.group_by:
-            logger.info("Composition skipped: Multi-table entity query without aggregation -> Fallback to LLM")
-            return None
+                ordered_cols = sorted(target_constraints.columns, key=_col_sort_key)
+                for req_col in ordered_cols:
+                    owner_tbl = None
+                    for t in table_list:
+                        if req_col in tables_meta.get(t, {}):
+                            owner_tbl = t
+                            break
+                    if owner_tbl:
+                        prefix = f'{aliases[owner_tbl]}.' if len(table_list) > 1 else ''
+                        col_proj = f'{prefix}"{req_col}"'
+                        if col_proj not in select_parts:
+                            select_parts.append(col_proj)
 
         if not select_parts:
-            # Entity query projection
+            # Entity query projection without explicit columns
             if len(table_list) > 1:
-                select_parts.append(f'{aliases[primary_table]}.*')
+                # If multi-table query with no specific columns requested, do not emit bare SELECT *
+                logger.info("Composition skipped: Multi-table query with no specific column projection -> Fallback to LLM")
+                return None
             else:
                 select_parts.append('*')
 
@@ -255,6 +316,11 @@ class RagCompositionService:
 
         # 4. Build WHERE clause
         where_parts: List[str] = []
+        wildcard_flts = [f for f in target_constraints.filters if f.column == "*"]
+        if len(wildcard_flts) > 1:
+            logger.info("Composition skipped: Multiple wildcard filters -> Fallback to LLM")
+            return None
+
         for flt in target_constraints.filters:
             col = flt.column
             val = flt.value
@@ -272,14 +338,20 @@ class RagCompositionService:
 
             if col == "*":
                 # Find suitable filter column
+                candidate_cols = []
                 for t in table_list:
-                    for c in tables_meta.get(t, []):
-                        if isinstance(val, (int, float)) and ("amount" in c or "price" in c or "cost" in c or "total" in c):
-                            where_parts.append(f'{prefix}"{c}" {op} {val}')
-                            break
+                    for c in tables_meta.get(t, {}).keys():
+                        if isinstance(val, (int, float)) and ("amount" in c or "price" in c or "cost" in c or "stock" in c or "quantity" in c):
+                            candidate_cols.append((t, c))
                         elif isinstance(val, str) and ("date" in c or "time" in c):
-                            where_parts.append(f'{prefix}"{c}" {op} \'{val}\'')
-                            break
+                            candidate_cols.append((t, c))
+                if candidate_cols:
+                    t_cand, c_cand = candidate_cols[0]
+                    pref = f'{aliases[t_cand]}.' if len(table_list) > 1 else ''
+                    if isinstance(val, (int, float)):
+                        where_parts.append(f'{pref}"{c_cand}" {op} {val}')
+                    elif isinstance(val, str):
+                        where_parts.append(f'{pref}"{c_cand}" {op} \'{val}\'')
             else:
                 if isinstance(val, (int, float)):
                     where_parts.append(f'{prefix}"{col}" {op} {val}')
@@ -317,19 +389,41 @@ class RagCompositionService:
             for ord_item in target_constraints.order_by:
                 col = ord_item.column
                 direction = ord_item.direction
-                if col == "*":
-                    p_cols = tables_meta.get(primary_table, [])
+                if target_constraints.aggregations:
+                    # If ranking an aggregated query, order by the aggregate expression
+                    agg = target_constraints.aggregations[0]
+                    agg_func = agg["func"].upper()
+                    agg_c = agg["column"].lower()
+                    if agg_c == "*":
+                        p_cols = list(tables_meta.get(primary_table, {}).keys())
+                        meas_cols = [c for c in p_cols if c in ("amount", "quantity", "unit_price", "price", "total")]
+                        agg_c = meas_cols[0] if meas_cols else p_cols[0]
+                    owner_tbl = None
+                    for t in table_list:
+                        if agg_c in tables_meta.get(t, {}):
+                            owner_tbl = t
+                            break
+                    prefix = f'{aliases[owner_tbl]}.' if owner_tbl and len(table_list) > 1 else ''
+                    ord_parts.append(f'{agg_func}({prefix}"{agg_c}") {direction}')
+                elif col == "*":
+                    p_cols = list(tables_meta.get(primary_table, {}).keys())
                     # Match explicit columns present in question
                     meas = [c for c in p_cols if c.lower() in [tc.lower() for tc in target_constraints.columns]]
                     if not meas:
-                        meas = [c for c in p_cols if c in ("amount", "price", "cost", "order_date", "date")]
+                        meas = [c for c in p_cols if c in ("amount", "price", "cost", "order_date", "date", "quantity")]
                     if not meas:
                         meas = [c for c in p_cols if not c.endswith(("_id", "_key")) and c != "id"]
                     if meas:
                         prefix = f'{aliases[primary_table]}.' if len(table_list) > 1 else ''
                         ord_parts.append(f'{prefix}"{meas[0]}" {direction}')
                 else:
-                    ord_parts.append(f'"{col}" {direction}')
+                    owner_tbl = None
+                    for t in table_list:
+                        if col in tables_meta.get(t, {}):
+                            owner_tbl = t
+                            break
+                    prefix = f'{aliases[owner_tbl]}.' if owner_tbl and len(table_list) > 1 else ''
+                    ord_parts.append(f'{prefix}"{col}" {direction}')
             if ord_parts:
                 order_sql = " ORDER BY " + ", ".join(ord_parts)
 

@@ -66,6 +66,12 @@ def compare_constraints(
     if len(expected.tables) >= 2 and len(actual.tables) == 1:
         missing.append("projection:single_table_cannot_satisfy_multi_table_entities")
 
+    # Column coverage for explicit entity projections without aggregations
+    if not expected.aggregations and expected.columns:
+        for req_col in expected.columns:
+            if req_col.lower() not in actual.columns:
+                missing.append(f"column:{req_col}")
+
     # 3. Bidirectional Filter Validation (Never drop WHERE & Never invent spurious WHERE)
     if not expected.filters and actual.filters:
         for act_f in actual.filters:
@@ -96,8 +102,11 @@ def compare_constraints(
         # Check actual does not contain unrequested filters
         if expected.filters:
             exp_filter_cols = {f.column.lower() for f in expected.filters if f.column != "*"}
+            has_wildcard = any(f.column == "*" for f in expected.filters)
             for act_f in actual.filters:
                 if act_f.column != "*" and act_f.column.lower() not in exp_filter_cols:
+                    if has_wildcard and any(f.column == "*" and f.operator == act_f.operator for f in expected.filters):
+                        continue
                     altered.append(f"spurious_filter:{act_f.column}{act_f.operator}'{act_f.value}'")
 
     # 4. Bidirectional Grouping Validation (Never drop GROUP BY & Never invent spurious GROUP BY)

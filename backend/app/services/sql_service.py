@@ -514,6 +514,7 @@ Return JSON format:
                     target_constraints=target_constraints,
                     retrieved_examples=retrieved_examples,
                     schema_context=schema_context,
+                    question=user_question,
                 )
                 if composed_result:
                     return composed_result
