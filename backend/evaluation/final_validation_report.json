@@ -1,61 +1,61 @@
 {
-  "overall_accuracy_pct": 98.4,
+  "overall_accuracy_pct": 100.0,
   "sql_validity_rate_pct": 100.0,
   "direct_rag_accuracy_pct": 100.0,
-  "llm_accuracy_pct": 98.1,
+  "llm_accuracy_pct": 100.0,
   "direct_rag_count": 10,
   "llm_count": 54,
-  "avg_latency_ms": 2211.5,
-  "median_latency_ms": 2410.1,
-  "p95_latency_ms": 2927.1,
+  "avg_latency_ms": 3389.0,
+  "median_latency_ms": 3228.7,
+  "p95_latency_ms": 6486.4,
   "categories": {
     "1. Simple Aggregates": {
       "total": 8,
       "correct": 8,
       "accuracy_pct": 100.0,
-      "avg_latency_ms": 629.4
+      "avg_latency_ms": 737.4
     },
     "2. Filtering": {
       "total": 8,
       "correct": 8,
       "accuracy_pct": 100.0,
-      "avg_latency_ms": 2579.9
+      "avg_latency_ms": 2968.4
     },
     "3. Grouping": {
       "total": 8,
       "correct": 8,
       "accuracy_pct": 100.0,
-      "avg_latency_ms": 2395.6
+      "avg_latency_ms": 2868.0
     },
     "4. Relationships": {
       "total": 8,
-      "correct": 7,
-      "accuracy_pct": 87.5,
-      "avg_latency_ms": 2524.6
+      "correct": 8,
+      "accuracy_pct": 100.0,
+      "avg_latency_ms": 4500.1
     },
     "5. Ranking": {
       "total": 8,
       "correct": 8,
       "accuracy_pct": 100.0,
-      "avg_latency_ms": 2666.7
+      "avg_latency_ms": 5085.9
     },
     "6. Complex Reasoning": {
       "total": 8,
       "correct": 8,
       "accuracy_pct": 100.0,
-      "avg_latency_ms": 2665.8
+      "avg_latency_ms": 4918.6
     },
     "7. Ambiguity": {
       "total": 8,
       "correct": 8,
       "accuracy_pct": 100.0,
-      "avg_latency_ms": 2335.4
+      "avg_latency_ms": 2946.1
     },
     "8. Paraphrases": {
       "total": 8,
       "correct": 8,
       "accuracy_pct": 100.0,
-      "avg_latency_ms": 1894.9
+      "avg_latency_ms": 3087.4
     }
   },
   "new_ranking_passed": "6/6",
