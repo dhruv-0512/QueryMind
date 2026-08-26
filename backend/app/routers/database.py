@@ -250,15 +250,14 @@ async def detect_database_relationships(
     if not conns:
         return {"candidates": []}
 
-    schema_results = await asyncio.gather(
-        *[discover_live_schema(db_session, conn.schema_name) for conn in conns],
-        return_exceptions=True
-    )
-
     merged_tables = {}
-    for sr in schema_results:
-        if not isinstance(sr, Exception):
-            merged_tables.update(sr.get("tables", {}))
+    for conn in conns:
+        try:
+            sr = await discover_live_schema(db_session, conn.schema_name)
+            if sr and isinstance(sr, dict):
+                merged_tables.update(sr.get("tables", {}))
+        except Exception as e:
+            logger.error(f"Schema discovery failed for conn {conn.id}: {e}")
 
     schema_info = {"tables": merged_tables}
     candidates = relationship_inference_service.detect_candidate_relationships(schema_info)

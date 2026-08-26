@@ -159,33 +159,31 @@ async def execute_nl_query(
         except Exception as e:
             logger.error(f"Cache parse error for key {cache_key}: {e}")
 
-    # Step 2: Live Schema Discovery from information_schema (all datasources in parallel)
-    # + SQL example retrieval in the same gather
+    # Step 2: Live Schema Discovery from information_schema (sequential per connection on db_session)
+    # + SQL example retrieval in parallel background task
     try:
         t0 = time.time()
-        gather_results = await asyncio.wait_for(
-            asyncio.gather(
-                *[discover_live_schema(db_session, conn.schema_name) for conn in all_db_conns],
-                sql_example_retrieval_service.retrieve_examples(question, limit=5),
-                return_exceptions=True
-            ),
-            timeout=60.0
-        )
-        logger.info(f"TIMING Parallel schema discovery + SQL examples took {time.time() - t0:.3f}s")
-    except asyncio.TimeoutError:
-        logger.error("Parallel retrieval timed out after 60s")
-        raise HTTPException(status_code=500, detail="Parallel retrieval timed out. Please try again.")
+        example_task = asyncio.create_task(sql_example_retrieval_service.retrieve_examples(question, limit=5))
+
+        schema_results = []
+        for conn in all_db_conns:
+            try:
+                sr = await discover_live_schema(db_session, conn.schema_name)
+                schema_results.append(sr)
+            except Exception as e:
+                logger.error(f"Schema discovery failed for db {conn.id}: {e}")
+                schema_results.append(e)
+
+        try:
+            retrieved_examples = await asyncio.wait_for(example_task, timeout=15.0)
+        except Exception as ex:
+            logger.warning(f"SQL example retrieval failed or timed out: {ex}")
+            retrieved_examples = []
+
+        logger.info(f"TIMING Schema discovery + SQL examples took {time.time() - t0:.3f}s")
     except Exception as e:
-        logger.error(f"Parallel retrieval failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed parallel retrieval: {str(e)}")
-
-    # Unpack: last item is sql examples, all others are schema results
-    retrieved_examples = gather_results[-1]
-    if isinstance(retrieved_examples, Exception):
-        logger.warning(f"SQL example retrieval failed: {retrieved_examples}")
-        retrieved_examples = []
-
-    schema_results = gather_results[:-1]  # one per datasource
+        logger.error(f"Retrieval failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed schema retrieval: {str(e)}")
 
     # Merge all schemas into a single live_schema_info
     merged_tables = {}
