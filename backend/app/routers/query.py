@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 import asyncio
+from app.config import settings
 from app.database import get_db
 from app.models.user import User
 from app.models.database_connection import DatabaseConnection
