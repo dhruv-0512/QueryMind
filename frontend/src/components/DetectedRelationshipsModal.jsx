@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   GitMerge,
   Check,
@@ -23,17 +23,27 @@ export const DetectedRelationshipsModal = ({ activeDbIds, onConfirmRelationships
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isConfirmed, setIsConfirmed] = useState(false);
 
+  const onConfirmRef = useRef(onConfirmRelationships);
+  useEffect(() => {
+    onConfirmRef.current = onConfirmRelationships;
+  }, [onConfirmRelationships]);
+
   // Helper to build a unique key for each relationship candidate
   const getCandidateKey = (c) =>
     `${c.source_table}.${c.source_column}->${c.target_table}.${c.target_column}`;
 
+  const activeDbIdsJson = JSON.stringify(activeDbIds || []);
+
   useEffect(() => {
-    if (!activeDbIds || activeDbIds.length < 2) {
+    const ids = JSON.parse(activeDbIdsJson);
+    if (!ids || ids.length < 2) {
       setCandidates([]);
       setSelectedKeys([]);
       setIsConfirmed(false);
       return;
     }
+
+    let isMounted = true;
 
     const detectRelationships = async () => {
       setIsLoading(true);
@@ -41,8 +51,9 @@ export const DetectedRelationshipsModal = ({ activeDbIds, onConfirmRelationships
       setIsConfirmed(false);
 
       try {
-        const response = await api.post('/database/relationships/detect', { db_ids: activeDbIds });
-        const detected = response.candidates || [];
+        const response = await api.post('/database/relationships/detect', { db_ids: ids });
+        if (!isMounted) return;
+        const detected = response?.candidates || [];
         setCandidates(detected);
 
         // Pre-select strong candidates (or all if all are moderate/strong)
@@ -50,34 +61,39 @@ export const DetectedRelationshipsModal = ({ activeDbIds, onConfirmRelationships
           .filter((c) => c.confidence_level === 'strong' || c.score >= 0.75)
           .map(getCandidateKey);
 
-        // If none are strong, select top candidates by score
         const defaultKeys = initialSelected.length > 0 ? initialSelected : detected.map(getCandidateKey);
         setSelectedKeys(defaultKeys);
 
         // Auto-propagate initial confirmed list to parent
         const initialConfirmed = detected.filter((c) => defaultKeys.includes(getCandidateKey(c)));
-        if (onConfirmRelationships) {
-          onConfirmRelationships(initialConfirmed);
+        if (onConfirmRef.current) {
+          onConfirmRef.current(initialConfirmed);
         }
       } catch (err) {
-        console.error('Relationship detection error:', err);
-        setErrorMsg('Failed to detect database relationships.');
+        if (!isMounted) return;
+        console.warn('Relationship detection note:', err?.message || err);
+        setCandidates([]);
       } finally {
-        setIsLoading(false);
+        if (isMounted) {
+          setIsLoading(false);
+        }
       }
     };
 
     detectRelationships();
-  }, [activeDbIds, onConfirmRelationships]);
+
+    return () => {
+      isMounted = false;
+    };
+  }, [activeDbIdsJson]);
 
   // Handle toggle of a candidate key
   const toggleCandidate = (key) => {
     setSelectedKeys((prev) => {
       const updated = prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key];
-      // Automatically notify parent of current selection
       const confirmedList = candidates.filter((c) => updated.includes(getCandidateKey(c)));
-      if (onConfirmRelationships) {
-        onConfirmRelationships(confirmedList);
+      if (onConfirmRef.current) {
+        onConfirmRef.current(confirmedList);
       }
       setIsConfirmed(true);
       return updated;
@@ -87,11 +103,11 @@ export const DetectedRelationshipsModal = ({ activeDbIds, onConfirmRelationships
   const handleSelectAll = useCallback(() => {
     const allKeys = candidates.map(getCandidateKey);
     setSelectedKeys(allKeys);
-    if (onConfirmRelationships) {
-      onConfirmRelationships(candidates);
+    if (onConfirmRef.current) {
+      onConfirmRef.current(candidates);
     }
     setIsConfirmed(true);
-  }, [candidates, onConfirmRelationships]);
+  }, [candidates]);
 
   const handleSelectStrongOnly = useCallback(() => {
     const strongKeys = candidates
@@ -99,24 +115,24 @@ export const DetectedRelationshipsModal = ({ activeDbIds, onConfirmRelationships
       .map(getCandidateKey);
     setSelectedKeys(strongKeys);
     const confirmedList = candidates.filter((c) => strongKeys.includes(getCandidateKey(c)));
-    if (onConfirmRelationships) {
-      onConfirmRelationships(confirmedList);
+    if (onConfirmRef.current) {
+      onConfirmRef.current(confirmedList);
     }
     setIsConfirmed(true);
-  }, [candidates, onConfirmRelationships]);
+  }, [candidates]);
 
   const handleClearAll = useCallback(() => {
     setSelectedKeys([]);
-    if (onConfirmRelationships) {
-      onConfirmRelationships([]);
+    if (onConfirmRef.current) {
+      onConfirmRef.current([]);
     }
     setIsConfirmed(true);
-  }, [onConfirmRelationships]);
+  }, []);
 
   const handleApplyAndClose = () => {
     const confirmedList = candidates.filter((c) => selectedKeys.includes(getCandidateKey(c)));
-    if (onConfirmRelationships) {
-      onConfirmRelationships(confirmedList);
+    if (onConfirmRef.current) {
+      onConfirmRef.current(confirmedList);
     }
     setIsConfirmed(true);
     setIsModalOpen(false);

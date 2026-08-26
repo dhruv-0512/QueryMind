@@ -67,11 +67,14 @@ export const QueryWorkspace = ({ selectedDbId }) => {
 
   const handleQuery = async (e) => {
     e.preventDefault();
-    if (activeDbIds.length === 0) { setErrorMsg('Please select at least one database to query.'); return; }
-    if (!question.trim()) return;
+    const currentQuestion = question.trim();
+    if (!currentQuestion) return;
+    if (activeDbIds.length === 0) {
+      setErrorMsg('Please select at least one database to query.');
+      return;
+    }
 
-    // Save to history, then clear the textarea (terminal behaviour — prompt empties after run)
-    push(question);
+    push(currentQuestion);
     setQuestion('');
 
     setIsLoading(true);
@@ -79,13 +82,13 @@ export const QueryWorkspace = ({ selectedDbId }) => {
     setQueryResult(null);
 
     try {
-      // Use db_ids array for multi-select, or db_id for backward compat with single
       const payload = activeDbIds.length === 1
-        ? { db_id: activeDbIds[0], question: question.trim(), confirmed_relationships: confirmedRelationships }
-        : { db_ids: activeDbIds, question: question.trim(), confirmed_relationships: confirmedRelationships };
+        ? { db_id: activeDbIds[0], question: currentQuestion, confirmed_relationships: confirmedRelationships }
+        : { db_ids: activeDbIds, question: currentQuestion, confirmed_relationships: confirmedRelationships };
       const response = await api.post('/query', payload);
       setQueryResult(response);
     } catch (err) {
+      setQuestion(currentQuestion);
       setErrorMsg(err.message || 'An error occurred during query execution.');
     } finally {
       setIsLoading(false);
