@@ -117,20 +117,24 @@ The evaluation harness covers:
 
 | Benchmark | Result |
 |---|---|
-| **50-query RAG-First accuracy** | **90% (45/50)** |
-| 64-query benchmark | **96.9% (62/64)** |
-| Ranking regression (6q) | 100% |
-| Domain literal regression (4q) | 100% |
-| Complex subquery regression (5q) | 100% |
-| Aggregate expansion regression (10q) | 100% |
-| Safety regression (10q) | 90% |
-| **Case C (RAG accepted wrong SQL)** | **1** (down from 11) |
-| RAG-only accuracy | **95.7%** |
-| SQL validity | 100% |
+| **50-query RAG-First accuracy** | **96.0% (48/50)** |
+| **64-query benchmark** | **98.4% (63/64)** |
+| **Safety regression (10q)** | **100.0% (10/10)** |
+| **Ranking regression (6q)** | **100.0% (6/6)** |
+| **Domain literal regression (4q)** | **100.0% (4/4)** |
+| **Complex subquery regression (5q)** | **100.0% (5/5)** |
+| **Aggregate expansion regression (10q)** | **100.0% (10/10)** |
+| **Case C (RAG accepted wrong SQL)** | **0 / 50 (0.0%)** |
+| **RAG-only precision** | **100.0% (32/32)** |
+| **Total RAG handled rate** | **64.0% (32/50)** |
+| **SQL validity** | **100.0%** |
 
 The **semantic constraint validator** enforces strict bidirectional invariants before any RAG-composed SQL is executed:
 - Expected NL constraints ⊆ actual SQL constraints
 - Actual SQL constraints ⊆ expected NL constraints (no spurious clauses)
+- Column-level projection verification with entity-query `SELECT *` defaulting
+- Temporal constraint safety gate routing unsupported date ranges to LLM fallback
+- Deterministic table alias parity between `SELECT` and `GROUP BY` clauses for PostgreSQL compatibility
 - Datatype safety: `SUM/AVG/MIN/MAX` on VARCHAR columns is rejected
 - Zero-constraint guard: bare `SELECT *` with no extractable NL constraints falls back to LLM
 
@@ -138,14 +142,14 @@ The **semantic constraint validator** enforces strict bidirectional invariants b
 
 ```bash
 python -m pytest backend/tests/test_constraint_extraction_and_validation.py -v
-# 31 tests: 6 original + 11 Case C regressions + 14 adversarial safety tests
+# 44 tests: 6 original + 11 Case C regressions + 14 adversarial safety tests + 5 Phase 1 tests + 7 targeted safety tests + 1 PostgreSQL alias parity test
 ```
 
 Evaluation scripts:
 
 ```bash
 python backend/evaluation/benchmark_harness.py
-python backend/evaluation/full_validation_suite.py
+python backend/evaluation/rag_first_benchmark.py
 ```
 
 ## How It Works: Multi-File Upload & Cross-Table PostgreSQL Engine
