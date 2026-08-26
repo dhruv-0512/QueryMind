@@ -472,7 +472,7 @@ STRICT SQL GENERATION & GROUNDING GUIDELINES:
 4. Entity Projection Rule: When asked for "products that...", "customers who...", "find the cheapest product", or "orders with...", select all entity columns (`SELECT *` or `SELECT p.*`) or the relevant entity columns requested by the user.
 5. Ranking & Limit Rule: For "N lowest", "N highest", "top N", or "cheapest product", use `ORDER BY <column> ASC/DESC LIMIT N`.
 6. Percentage & Ratio Rule: For percentages relative to total revenue or count, use arithmetic `(SUM("amount") * 100.0 / (SELECT SUM("amount") FROM "orders"))` or window function.
-7. JOIN Rule: When joining tables, use explicit JOIN ... ON syntax. Reference matching foreign keys in the schema.
+7. JOIN & LEFT JOIN Rule: When joining tables, use explicit JOIN ... ON syntax. Reference matching foreign keys in the schema. When the question asks for an entity and an aggregate "for each" (e.g. "list product names and the total quantity sold for each", "all customers and their orders"), use `LEFT JOIN` with `COALESCE(SUM(...), 0)` so that entities with zero related records (e.g. products with 0 sales) remain visible. Use `INNER JOIN` when filtering on joined conditions (e.g. "orders placed by customers from Chennai").
 
 Return JSON format:
 {{

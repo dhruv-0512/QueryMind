@@ -320,7 +320,7 @@ BENCHMARK_CASES = [
         "id": 29,
         "category": "4. Relationships",
         "question": "List product names and the total quantity sold for each.",
-        "ref_sql": "SELECT p.product_name, SUM(oi.quantity) FROM products p JOIN order_items oi ON p.product_id = oi.product_id GROUP BY p.product_name;",
+        "ref_sql": "SELECT p.product_name, COALESCE(SUM(oi.quantity), 0) FROM products p LEFT JOIN order_items oi ON p.product_id = oi.product_id GROUP BY p.product_name;",
     },
     {
         "id": 30,
