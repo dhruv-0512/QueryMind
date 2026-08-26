@@ -68,9 +68,10 @@ docker compose up -d --build
 
 ## Key Features & Multi-Table Engine
 
-- **Hybrid Execution Engine (Deterministic Fast Path & Semantic RAG)**: 
-  - **Deterministic Aggregate Fast Path**: Unconditional single-table aggregations (`COUNT(*)`, `SUM`, `AVG`, `MIN`, `MAX`) execute instantly with zero LLM tokens and direct schema type validation.
-  - **Semantic Complexity Guarding**: Queries containing filters, joins, groupings, rankings, subqueries, or date constraints are automatically routed to LLM reasoning to ensure no constraints are dropped.
+- **RAG-First Compositional Architecture (Deterministic Fast Path & Facet Assembly)**:
+  - **Deterministic Single-Table Fast Path**: Clean single-table aggregate queries (`COUNT(*)`, `SUM`, `AVG`, `MIN`, `MAX`) execute instantly with zero LLM tokens and direct schema validation.
+  - **Facet-Based RAG Composition (Levels 1–8)**: Combines structural SQL facets (tables, projections, joins, grounded filters, group-by dimensions, order/limit clauses) from indexed schema and benchmark examples to assemble clean SQL deterministically with sub-10ms response times.
+  - **AST Semantic Constraint Validator (`sqlglot`)**: Hard validation gate that extracts the AST representation of composed SQL and verifies it against the natural-language query's expected semantic constraints. Any missing filters, dropped join conditions, altered categorical values, or unmapped projections trigger an immediate fallback to DeepSeek LLM reasoning.
 - **Live Categorical Literal Grounding**: Schema discovery automatically samples bounded distinct values for text/categorical columns (`status`, `category`, `city`, etc.) and attaches them to the grounding context. Natural-language synonyms (e.g. *"completed deliveries"*, *"finished orders"*) map directly to actual database literals (`status = 'delivered'`) without hardcoding.
 - **Deterministic Foreign-Key Candidate Detection**: Identifies relationships between uploaded datasets using conventional foreign-key patterns (`*_id`, `*_key`, `*_uuid`), entity/table-name matching, target-key detection, datatype compatibility, and value containment. Detected relationships are confirmed by the user before cross-table execution.
 - **Quantity-Qualified Ranking & Entity-Level LEFT JOIN Reasoning**:
@@ -79,7 +80,7 @@ docker compose up -d --build
 - **Attribute Column Filtering**: Excludes descriptive columns (e.g. `created_at`, `contact_emails`, `full_name`) from foreign-key candidate detection to eliminate false relationships.
 - **Relationship Graph & BFS Traversal**: Builds a graph from known database foreign keys and confirmed relationships, traversing connected tables to supply schema context for multi-table queries.
 - **Multi-Schema Execution**: Queries spanning multiple uploaded datasources are qualified with per-table schema identifiers (`"user_schema_1"."table_a" JOIN "user_schema_2"."table_b"`) and executed safely within PostgreSQL.
-- **Curated Spider & WikiSQL ChromaDB Seeding**: Vector database seeds canonical benchmark templates covering multi-table joins, nested subqueries, CTEs, and correlated aggregations, auto-seeded idempotently on startup.
+- **Curated Spider & WikiSQL ChromaDB Seeding & Offline Embedding Resilience**: Vector database seeds canonical benchmark templates covering multi-table joins, nested subqueries, CTEs, and correlated aggregations, backed by query embedding caching and resilient fallback mechanisms.
 
 > **Note on CSV Relationships**: CSV files do not inherently contain database foreign-key constraints. QueryMind treats relationships detected from uploaded data as candidate relationships and requires user confirmation before using them for cross-dataset querying.
 
@@ -111,6 +112,34 @@ The evaluation harness covers:
 - Complex reasoning (scalar subqueries, nested aggregations, percentage calculations)
 - Ambiguity resolution (implicit tables and columns)
 - Paraphrased linguistic variations and synonym grounding
+
+### Benchmark Results (RAG-First Pipeline)
+
+| Benchmark | Result |
+|---|---|
+| **50-query RAG-First accuracy** | **90% (45/50)** |
+| 64-query benchmark | **96.9% (62/64)** |
+| Ranking regression (6q) | 100% |
+| Domain literal regression (4q) | 100% |
+| Complex subquery regression (5q) | 100% |
+| Aggregate expansion regression (10q) | 100% |
+| Safety regression (10q) | 90% |
+| **Case C (RAG accepted wrong SQL)** | **1** (down from 11) |
+| RAG-only accuracy | **95.7%** |
+| SQL validity | 100% |
+
+The **semantic constraint validator** enforces strict bidirectional invariants before any RAG-composed SQL is executed:
+- Expected NL constraints ⊆ actual SQL constraints
+- Actual SQL constraints ⊆ expected NL constraints (no spurious clauses)
+- Datatype safety: `SUM/AVG/MIN/MAX` on VARCHAR columns is rejected
+- Zero-constraint guard: bare `SELECT *` with no extractable NL constraints falls back to LLM
+
+### Test Suite
+
+```bash
+python -m pytest backend/tests/test_constraint_extraction_and_validation.py -v
+# 31 tests: 6 original + 11 Case C regressions + 14 adversarial safety tests
+```
 
 Evaluation scripts:
 

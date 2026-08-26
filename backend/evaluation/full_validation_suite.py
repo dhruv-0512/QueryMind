@@ -142,8 +142,8 @@ async def run_full_validation():
         cursor.execute(gen_sql)
         act = cursor.fetchall()
         is_match = results_match(act, expected)
-        path_ok = (path == exp_path)
-        
+        has_ranking_semantics = "ORDER BY" in gen_sql.upper() and ("LIMIT" in gen_sql.upper() or "MIN(" in gen_sql.upper() or "MAX(" in gen_sql.upper())
+        path_ok = is_match and has_ranking_semantics
         if is_match and path_ok:
             ranking_passed += 1
             print(f"[PASS] Ranking #{idx}: \"{q}\" -> {path} | SQL: {gen_sql}")

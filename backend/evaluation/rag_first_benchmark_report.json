@@ -1,0 +1,620 @@
+{
+  "overall_accuracy": 0.72,
+  "sql_validity": 1.0,
+  "rag_bypass_pct": 0.58,
+  "total_queries": 50,
+  "category_breakdown": {
+    "1. Aggregates": {
+      "total": 5,
+      "correct": 5,
+      "rag": 5,
+      "llm": 0
+    },
+    "2. Filters": {
+      "total": 5,
+      "correct": 5,
+      "rag": 4,
+      "llm": 1
+    },
+    "3. JOINs": {
+      "total": 5,
+      "correct": 2,
+      "rag": 2,
+      "llm": 3
+    },
+    "4. JOIN + Filters": {
+      "total": 5,
+      "correct": 3,
+      "rag": 2,
+      "llm": 3
+    },
+    "5. GROUP BY": {
+      "total": 5,
+      "correct": 3,
+      "rag": 4,
+      "llm": 1
+    },
+    "6. JOIN + GROUP BY": {
+      "total": 5,
+      "correct": 3,
+      "rag": 3,
+      "llm": 2
+    },
+    "7. Ranking": {
+      "total": 5,
+      "correct": 4,
+      "rag": 4,
+      "llm": 1
+    },
+    "8. Multi-Hop Relationships": {
+      "total": 5,
+      "correct": 1,
+      "rag": 3,
+      "llm": 2
+    },
+    "9. Nested / Complex": {
+      "total": 5,
+      "correct": 5,
+      "rag": 0,
+      "llm": 5
+    },
+    "10. Paraphrases": {
+      "total": 5,
+      "correct": 5,
+      "rag": 2,
+      "llm": 3
+    }
+  },
+  "detailed_results": [
+    {
+      "id": 1,
+      "category": "1. Aggregates",
+      "question": "Calculate the grand total of order amounts.",
+      "rag_mode": "direct",
+      "llm_invoked": false,
+      "gen_sql": "SELECT SUM(\"amount\") AS sum_amount FROM \"orders\"",
+      "sql_valid": true,
+      "correct": true,
+      "latency_ms": 1569.6541000033903
+    },
+    {
+      "id": 2,
+      "category": "1. Aggregates",
+      "question": "What is the overall average product price?",
+      "rag_mode": "direct",
+      "llm_invoked": false,
+      "gen_sql": "SELECT AVG(\"price\") AS avg_price FROM \"products\"",
+      "sql_valid": true,
+      "correct": true,
+      "latency_ms": 750.8979999984149
+    },
+    {
+      "id": 3,
+      "category": "1. Aggregates",
+      "question": "Count the total number of customers.",
+      "rag_mode": "direct",
+      "llm_invoked": false,
+      "gen_sql": "SELECT COUNT(*) AS total_customers FROM \"customers\"",
+      "sql_valid": true,
+      "correct": true,
+      "latency_ms": 341.82270000019344
+    },
+    {
+      "id": 4,
+      "category": "1. Aggregates",
+      "question": "What is the minimum amount among all orders?",
+      "rag_mode": "rag_composition",
+      "llm_invoked": false,
+      "gen_sql": "SELECT MIN(\"amount\") FROM \"orders\"",
+      "sql_valid": true,
+      "correct": true,
+      "latency_ms": 1153.4210999998322
+    },
+    {
+      "id": 5,
+      "category": "1. Aggregates",
+      "question": "Determine the highest price among products.",
+      "rag_mode": "rag_composition",
+      "llm_invoked": false,
+      "gen_sql": "SELECT MAX(\"price\") FROM \"products\"",
+      "sql_valid": true,
+      "correct": true,
+      "latency_ms": 7.838300000003073
+    },
+    {
+      "id": 6,
+      "category": "2. Filters",
+      "question": "List all customers who live in Bangalore.",
+      "rag_mode": "rag_composition",
+      "llm_invoked": false,
+      "gen_sql": "SELECT * FROM \"customers\" WHERE \"city\" = 'Bangalore'",
+      "sql_valid": true,
+      "correct": true,
+      "latency_ms": 22.453900000982685
+    },
+    {
+      "id": 7,
+      "category": "2. Filters",
+      "question": "Find products with a price greater than 500.",
+      "rag_mode": "rag_composition",
+      "llm_invoked": false,
+      "gen_sql": "SELECT * FROM \"products\" WHERE \"price\" > 500.0",
+      "sql_valid": true,
+      "correct": true,
+      "latency_ms": 9.352600001875544
+    },
+    {
+      "id": 8,
+      "category": "2. Filters",
+      "question": "Show all completed deliveries.",
+      "rag_mode": "deepseek_llm",
+      "llm_invoked": true,
+      "gen_sql": "SELECT * FROM \"orders\" WHERE \"status\" = 'delivered'",
+      "sql_valid": true,
+      "correct": true,
+      "latency_ms": 4749.911999999313
+    },
+    {
+      "id": 9,
+      "category": "2. Filters",
+      "question": "List all orders that were cancelled.",
+      "rag_mode": "rag_composition",
+      "llm_invoked": false,
+      "gen_sql": "SELECT * FROM \"orders\" WHERE \"status\" = 'cancelled' AND \"status\" = 'cancelled' AND \"status\" = 'cancelled' AND \"status\" = 'cancelled'",
+      "sql_valid": true,
+      "correct": true,
+      "latency_ms": 4.164800000580726
+    },
+    {
+      "id": 10,
+      "category": "2. Filters",
+      "question": "Find products in the Electronics category.",
+      "rag_mode": "rag_composition",
+      "llm_invoked": false,
+      "gen_sql": "SELECT * FROM \"products\" WHERE \"category\" = 'Electronics'",
+      "sql_valid": true,
+      "correct": true,
+      "latency_ms": 2.5213999979314394
+    },
+    {
+      "id": 11,
+      "category": "3. JOINs",
+      "question": "Show customer names and their order amounts.",
+      "rag_mode": "deepseek_llm",
+      "llm_invoked": true,
+      "gen_sql": "SELECT c.\"name\", o.\"amount\" FROM \"customers\" c INNER JOIN \"orders\" o ON c.\"customer_id\" = o.\"customer_id\"",
+      "sql_valid": true,
+      "correct": true,
+      "latency_ms": 4151.686699999118
+    },
+    {
+      "id": 12,
+      "category": "3. JOINs",
+      "question": "List order IDs and the product names ordered.",
+      "rag_mode": "rag_composition",
+      "llm_invoked": false,
+      "gen_sql": "SELECT * FROM \"customers\"",
+      "sql_valid": true,
+      "correct": false,
+      "latency_ms": 2.1487999983946793
+    },
+    {
+      "id": 13,
+      "category": "3. JOINs",
+      "question": "Show customer names with the statuses of their orders.",
+      "rag_mode": "deepseek_llm",
+      "llm_invoked": true,
+      "gen_sql": "SELECT c.\"name\", o.\"status\" FROM \"customers\" c LEFT JOIN \"orders\" o ON c.\"customer_id\" = o.\"customer_id\"",
+      "sql_valid": true,
+      "correct": true,
+      "latency_ms": 2835.2904000021226
+    },
+    {
+      "id": 14,
+      "category": "3. JOINs",
+      "question": "List product categories and the quantities ordered.",
+      "rag_mode": "deepseek_llm",
+      "llm_invoked": true,
+      "gen_sql": "SELECT p.\"category\", COALESCE(SUM(oi.\"quantity\"), 0) AS \"total_quantity_ordered\" FROM \"products\" p LEFT JOIN \"order_items\" oi ON p.\"product_id\" = oi.\"product_id\" GROUP BY p.\"category\" ORDER BY p.\"category\"",
+      "sql_valid": true,
+      "correct": false,
+      "latency_ms": 3946.3918000001286
+    },
+    {
+      "id": 15,
+      "category": "3. JOINs",
+      "question": "Show customer cities and the order amounts placed.",
+      "rag_mode": "rag_composition",
+      "llm_invoked": false,
+      "gen_sql": "SELECT * FROM \"orders\"",
+      "sql_valid": true,
+      "correct": false,
+      "latency_ms": 1.3964999998279382
+    },
+    {
+      "id": 16,
+      "category": "4. JOIN + Filters",
+      "question": "Show all orders placed by customers from Chennai.",
+      "rag_mode": "deepseek_llm",
+      "llm_invoked": true,
+      "gen_sql": "SELECT o.* FROM \"orders\" o INNER JOIN \"customers\" c ON o.\"customer_id\" = c.\"customer_id\" WHERE c.\"city\" = 'Chennai'",
+      "sql_valid": true,
+      "correct": true,
+      "latency_ms": 2006.1655999998038
+    },
+    {
+      "id": 17,
+      "category": "4. JOIN + Filters",
+      "question": "List order items for products in Electronics.",
+      "rag_mode": "rag_composition",
+      "llm_invoked": false,
+      "gen_sql": "SELECT * FROM \"products\" WHERE \"category\" = 'Electronics'",
+      "sql_valid": true,
+      "correct": false,
+      "latency_ms": 1.9603999971877784
+    },
+    {
+      "id": 18,
+      "category": "4. JOIN + Filters",
+      "question": "Show orders placed by Alice.",
+      "rag_mode": "rag_composition",
+      "llm_invoked": false,
+      "gen_sql": "SELECT \"alice\" FROM \"orders\" GROUP BY \"alice\"",
+      "sql_valid": true,
+      "correct": false,
+      "latency_ms": 1.8292999993718695
+    },
+    {
+      "id": 19,
+      "category": "4. JOIN + Filters",
+      "question": "Find delivered orders for customers in Mumbai.",
+      "rag_mode": "deepseek_llm",
+      "llm_invoked": true,
+      "gen_sql": "SELECT o.* FROM \"orders\" o INNER JOIN \"customers\" c ON o.\"customer_id\" = c.\"customer_id\" WHERE c.\"city\" = 'Mumbai' AND o.\"status\" = 'delivered'",
+      "sql_valid": true,
+      "correct": true,
+      "latency_ms": 1790.5304999985674
+    },
+    {
+      "id": 20,
+      "category": "4. JOIN + Filters",
+      "question": "List customer names who ordered items with quantity greater than 2.",
+      "rag_mode": "deepseek_llm",
+      "llm_invoked": true,
+      "gen_sql": "SELECT c.\"name\" FROM \"customers\" c INNER JOIN \"orders\" o ON c.\"customer_id\" = o.\"customer_id\" INNER JOIN \"order_items\" oi ON o.\"order_id\" = oi.\"order_id\" WHERE oi.\"quantity\" > 2",
+      "sql_valid": true,
+      "correct": true,
+      "latency_ms": 1741.2795999989612
+    },
+    {
+      "id": 21,
+      "category": "5. GROUP BY",
+      "question": "What is the average order amount for each customer ID?",
+      "rag_mode": "rag_composition",
+      "llm_invoked": false,
+      "gen_sql": "SELECT \"customer_id\", AVG(\"amount\") FROM \"orders\" GROUP BY \"customer_id\"",
+      "sql_valid": true,
+      "correct": true,
+      "latency_ms": 1.7757999994501006
+    },
+    {
+      "id": 22,
+      "category": "5. GROUP BY",
+      "question": "Count the number of customers in each city.",
+      "rag_mode": "rag_composition",
+      "llm_invoked": false,
+      "gen_sql": "SELECT COUNT(*) FROM \"customers\"",
+      "sql_valid": true,
+      "correct": false,
+      "latency_ms": 1.4628999997512437
+    },
+    {
+      "id": 23,
+      "category": "5. GROUP BY",
+      "question": "What is the total order amount for each status?",
+      "rag_mode": "rag_composition",
+      "llm_invoked": false,
+      "gen_sql": "SELECT \"status\", SUM(\"amount\") FROM \"orders\" GROUP BY \"status\"",
+      "sql_valid": true,
+      "correct": true,
+      "latency_ms": 1.9298000006529037
+    },
+    {
+      "id": 24,
+      "category": "5. GROUP BY",
+      "question": "Count how many products exist in each category.",
+      "rag_mode": "rag_composition",
+      "llm_invoked": false,
+      "gen_sql": "SELECT COUNT(*) FROM \"products\"",
+      "sql_valid": true,
+      "correct": false,
+      "latency_ms": 1.5168999998422805
+    },
+    {
+      "id": 25,
+      "category": "5. GROUP BY",
+      "question": "Find customer IDs who placed more than 1 order.",
+      "rag_mode": "deepseek_llm",
+      "llm_invoked": true,
+      "gen_sql": "SELECT \"customer_id\" FROM \"orders\" GROUP BY \"customer_id\" HAVING COUNT(*) > 1",
+      "sql_valid": true,
+      "correct": true,
+      "latency_ms": 1789.048400001775
+    },
+    {
+      "id": 26,
+      "category": "6. JOIN + GROUP BY",
+      "question": "What is the total revenue for each city?",
+      "rag_mode": "rag_composition",
+      "llm_invoked": false,
+      "gen_sql": "SELECT \"city\", SUM(\"city\") FROM \"customers\" GROUP BY \"city\"",
+      "sql_valid": true,
+      "correct": true,
+      "latency_ms": 1.6928000004554633
+    },
+    {
+      "id": 27,
+      "category": "6. JOIN + GROUP BY",
+      "question": "Show customer names and their total spending.",
+      "rag_mode": "rag_composition",
+      "llm_invoked": false,
+      "gen_sql": "SELECT SUM(\"name\") FROM \"customers\" WHERE \"status\" = 'processing' AND \"status\" = 'processing' AND \"status\" = 'processing' AND \"status\" = 'processing'",
+      "sql_valid": true,
+      "correct": false,
+      "latency_ms": 2.021600001171464
+    },
+    {
+      "id": 28,
+      "category": "6. JOIN + GROUP BY",
+      "question": "What is the total quantity sold for each product name?",
+      "rag_mode": "deepseek_llm",
+      "llm_invoked": true,
+      "gen_sql": "SELECT p.\"product_name\", COALESCE(SUM(oi.\"quantity\"), 0) AS \"total_quantity_sold\" FROM \"products\" p LEFT JOIN \"order_items\" oi ON p.\"product_id\" = oi.\"product_id\" GROUP BY p.\"product_name\" ORDER BY p.\"product_name\"",
+      "sql_valid": true,
+      "correct": false,
+      "latency_ms": 1833.7584999972023
+    },
+    {
+      "id": 29,
+      "category": "6. JOIN + GROUP BY",
+      "question": "Find the average order amount for customers in each city.",
+      "rag_mode": "deepseek_llm",
+      "llm_invoked": true,
+      "gen_sql": "SELECT c.\"city\", AVG(o.\"amount\") AS \"avg_order_amount\" FROM \"customers\" c INNER JOIN \"orders\" o ON c.\"customer_id\" = o.\"customer_id\" GROUP BY c.\"city\"",
+      "sql_valid": true,
+      "correct": true,
+      "latency_ms": 2007.7664999989793
+    },
+    {
+      "id": 30,
+      "category": "6. JOIN + GROUP BY",
+      "question": "Count the number of orders for each customer name.",
+      "rag_mode": "rag_composition",
+      "llm_invoked": false,
+      "gen_sql": "SELECT c.\"customer_id\", COUNT(*) FROM \"customers\" c INNER JOIN \"orders\" o ON c.\"customer_id\" = o.\"customer_id\" GROUP BY c.\"customer_id\"",
+      "sql_valid": true,
+      "correct": true,
+      "latency_ms": 3.1093999969016295
+    },
+    {
+      "id": 31,
+      "category": "7. Ranking",
+      "question": "Find the 5 lowest amount orders.",
+      "rag_mode": "rag_composition",
+      "llm_invoked": false,
+      "gen_sql": "SELECT * FROM \"orders\" ORDER BY \"amount\" ASC LIMIT 5",
+      "sql_valid": true,
+      "correct": true,
+      "latency_ms": 3.368199999385979
+    },
+    {
+      "id": 32,
+      "category": "7. Ranking",
+      "question": "Show the top 3 most expensive products.",
+      "rag_mode": "rag_composition",
+      "llm_invoked": false,
+      "gen_sql": "SELECT * FROM \"products\" ORDER BY \"price\" DESC LIMIT 3",
+      "sql_valid": true,
+      "correct": true,
+      "latency_ms": 3.178500002832152
+    },
+    {
+      "id": 33,
+      "category": "7. Ranking",
+      "question": "What is the most recent order?",
+      "rag_mode": "deepseek_llm",
+      "llm_invoked": true,
+      "gen_sql": "SELECT * FROM \"orders\" ORDER BY \"order_date\" DESC LIMIT 1",
+      "sql_valid": true,
+      "correct": true,
+      "latency_ms": 4733.151200001885
+    },
+    {
+      "id": 34,
+      "category": "7. Ranking",
+      "question": "Find the 2 cheapest products.",
+      "rag_mode": "rag_composition",
+      "llm_invoked": false,
+      "gen_sql": "SELECT * FROM \"products\" ORDER BY \"price\" ASC LIMIT 2",
+      "sql_valid": true,
+      "correct": true,
+      "latency_ms": 7.743799997115275
+    },
+    {
+      "id": 35,
+      "category": "7. Ranking",
+      "question": "Show the top 3 customers by total spending.",
+      "rag_mode": "rag_composition",
+      "llm_invoked": false,
+      "gen_sql": "SELECT \"total\", SUM(\"name\") FROM \"customers\" WHERE \"status\" = 'processing' AND \"status\" = 'processing' AND \"status\" = 'processing' AND \"status\" = 'processing' GROUP BY \"total\" ORDER BY \"name\" DESC LIMIT 3",
+      "sql_valid": true,
+      "correct": false,
+      "latency_ms": 7.11080000110087
+    },
+    {
+      "id": 36,
+      "category": "8. Multi-Hop Relationships",
+      "question": "Show customer names, order IDs, and product names ordered.",
+      "rag_mode": "rag_composition",
+      "llm_invoked": false,
+      "gen_sql": "SELECT * FROM \"customers\"",
+      "sql_valid": true,
+      "correct": false,
+      "latency_ms": 3.7288000021362677
+    },
+    {
+      "id": 37,
+      "category": "8. Multi-Hop Relationships",
+      "question": "What products have been purchased by customers from Bangalore?",
+      "rag_mode": "deepseek_llm",
+      "llm_invoked": true,
+      "gen_sql": "SELECT p.* FROM \"products\" p INNER JOIN \"order_items\" oi ON p.\"product_id\" = oi.\"product_id\" INNER JOIN \"orders\" o ON oi.\"order_id\" = o.\"order_id\" INNER JOIN \"customers\" c ON o.\"customer_id\" = c.\"customer_id\" WHERE c.\"city\" = 'Bangalore'",
+      "sql_valid": true,
+      "correct": false,
+      "latency_ms": 4515.701500000432
+    },
+    {
+      "id": 38,
+      "category": "8. Multi-Hop Relationships",
+      "question": "Find total quantity ordered per customer name across all products.",
+      "rag_mode": "deepseek_llm",
+      "llm_invoked": true,
+      "gen_sql": "SELECT c.\"name\", COALESCE(SUM(oi.\"quantity\"), 0) AS total_quantity FROM \"customers\" c LEFT JOIN \"orders\" o ON c.\"customer_id\" = o.\"customer_id\" LEFT JOIN \"order_items\" oi ON o.\"order_id\" = oi.\"order_id\" GROUP BY c.\"customer_id\", c.\"name\" ORDER BY c.\"name\"",
+      "sql_valid": true,
+      "correct": true,
+      "latency_ms": 4157.332099999621
+    },
+    {
+      "id": 39,
+      "category": "8. Multi-Hop Relationships",
+      "question": "Show customer cities and the categories of products they bought.",
+      "rag_mode": "rag_composition",
+      "llm_invoked": false,
+      "gen_sql": "SELECT * FROM \"products\"",
+      "sql_valid": true,
+      "correct": false,
+      "latency_ms": 2.694400001928443
+    },
+    {
+      "id": 40,
+      "category": "8. Multi-Hop Relationships",
+      "question": "Calculate total spending by product category.",
+      "rag_mode": "rag_composition",
+      "llm_invoked": false,
+      "gen_sql": "SELECT \"product_name\", SUM(\"category\") FROM \"products\" WHERE \"status\" = 'processing' AND \"status\" = 'processing' AND \"status\" = 'processing' AND \"status\" = 'processing' GROUP BY \"product_name\"",
+      "sql_valid": true,
+      "correct": false,
+      "latency_ms": 4.695600000559352
+    },
+    {
+      "id": 41,
+      "category": "9. Nested / Complex",
+      "question": "Find customers whose total spending is above the average customer spending.",
+      "rag_mode": "deepseek_llm",
+      "llm_invoked": true,
+      "gen_sql": "SELECT c.*, SUM(o.\"amount\") AS total_spending FROM \"customers\" c LEFT JOIN orders o ON c.\"customer_id\" = o.\"customer_id\" GROUP BY c.\"customer_id\" HAVING SUM(o.\"amount\") > (SELECT AVG(total_spending) FROM (SELECT SUM(o2.\"amount\") AS total_spending FROM \"customers\" c2 LEFT JOIN orders o2 ON c2.\"customer_id\" = o2.\"customer_id\" GROUP BY c2.\"customer_id\") AS customer_spending)",
+      "sql_valid": true,
+      "correct": true,
+      "latency_ms": 5902.556699998968
+    },
+    {
+      "id": 42,
+      "category": "9. Nested / Complex",
+      "question": "Show products that have a price higher than the average product price.",
+      "rag_mode": "deepseek_llm",
+      "llm_invoked": true,
+      "gen_sql": "SELECT * FROM \"products\" WHERE \"price\" > (SELECT AVG(\"price\") FROM \"products\")",
+      "sql_valid": true,
+      "correct": true,
+      "latency_ms": 3731.729399998585
+    },
+    {
+      "id": 43,
+      "category": "9. Nested / Complex",
+      "question": "Find orders with an amount greater than the average of all delivered orders.",
+      "rag_mode": "deepseek_llm",
+      "llm_invoked": true,
+      "gen_sql": "SELECT * FROM \"orders\" WHERE \"amount\" > (SELECT AVG(\"amount\") FROM \"orders\" WHERE \"status\" = 'delivered')",
+      "sql_valid": true,
+      "correct": true,
+      "latency_ms": 3953.0734999971173
+    },
+    {
+      "id": 44,
+      "category": "9. Nested / Complex",
+      "question": "Find customers who have never placed any orders.",
+      "rag_mode": "deepseek_llm",
+      "llm_invoked": true,
+      "gen_sql": "SELECT * FROM \"customers\" c WHERE NOT EXISTS (SELECT 1 FROM \"orders\" o WHERE o.\"customer_id\" = c.\"customer_id\")",
+      "sql_valid": true,
+      "correct": true,
+      "latency_ms": 10011.327000000165
+    },
+    {
+      "id": 45,
+      "category": "9. Nested / Complex",
+      "question": "List products that have never been ordered.",
+      "rag_mode": "deepseek_llm",
+      "llm_invoked": true,
+      "gen_sql": "SELECT p.* FROM \"products\" p LEFT JOIN \"order_items\" oi ON p.\"product_id\" = oi.\"product_id\" WHERE oi.\"product_id\" IS NULL",
+      "sql_valid": true,
+      "correct": true,
+      "latency_ms": 8612.430999997741
+    },
+    {
+      "id": 46,
+      "category": "10. Paraphrases",
+      "question": "Give me the mean ticket size for completed deliveries.",
+      "rag_mode": "deepseek_llm",
+      "llm_invoked": true,
+      "gen_sql": "SELECT AVG(\"amount\") AS mean_ticket_size FROM \"orders\" WHERE \"status\" = 'delivered'",
+      "sql_valid": true,
+      "correct": true,
+      "latency_ms": 5577.379099999234
+    },
+    {
+      "id": 47,
+      "category": "10. Paraphrases",
+      "question": "Retrieve all customers residing in Chennai.",
+      "rag_mode": "rag_composition",
+      "llm_invoked": false,
+      "gen_sql": "SELECT * FROM \"customers\" WHERE \"city\" = 'Chennai'",
+      "sql_valid": true,
+      "correct": true,
+      "latency_ms": 3.377000000909902
+    },
+    {
+      "id": 48,
+      "category": "10. Paraphrases",
+      "question": "Compute the mean price across all products.",
+      "rag_mode": "direct",
+      "llm_invoked": false,
+      "gen_sql": "SELECT AVG(\"price\") AS avg_price FROM \"products\"",
+      "sql_valid": true,
+      "correct": true,
+      "latency_ms": 0.7469000011042226
+    },
+    {
+      "id": 49,
+      "category": "10. Paraphrases",
+      "question": "Display the aggregated expenditure for every customer.",
+      "rag_mode": "deepseek_llm",
+      "llm_invoked": true,
+      "gen_sql": "SELECT \"c\".\"customer_id\", \"c\".\"name\", COALESCE(SUM(\"o\".\"amount\"), 0) AS \"total_expenditure\" FROM \"customers\" \"c\" LEFT JOIN \"orders\" \"o\" ON \"c\".\"customer_id\" = \"o\".\"customer_id\" GROUP BY \"c\".\"customer_id\", \"c\".\"name\" ORDER BY \"c\".\"customer_id\"",
+      "sql_valid": true,
+      "correct": true,
+      "latency_ms": 5121.952199999214
+    },
+    {
+      "id": 50,
+      "category": "10. Paraphrases",
+      "question": "Who is the top spender overall?",
+      "rag_mode": "deepseek_llm",
+      "llm_invoked": true,
+      "gen_sql": "SELECT c.\"name\", SUM(o.\"amount\") AS total_spent FROM \"customers\" c INNER JOIN \"orders\" o ON c.\"customer_id\" = o.\"customer_id\" GROUP BY c.\"customer_id\", c.\"name\" ORDER BY total_spent DESC LIMIT 1",
+      "sql_valid": true,
+      "correct": true,
+      "latency_ms": 8049.013600000762
+    }
+  ]
+}

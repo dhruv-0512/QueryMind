@@ -9,7 +9,7 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 EMBED_BATCH_SIZE = 32
-EMBED_MAX_RETRIES = 6
+EMBED_MAX_RETRIES = 2
 GEMINI_BATCH_SIZE = 8
 BGE_QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
 
@@ -66,7 +66,12 @@ def _gemini_embed_batch(texts: List[str], task_type: str) -> List[List[float]]:
     return embeddings
 
 
+_gemini_quota_exhausted = False
+
 def _gemini_embed_with_retry(texts: List[str], task_type: str) -> List[List[float]]:
+    global _gemini_quota_exhausted
+    if _gemini_quota_exhausted:
+        raise RuntimeError("Gemini daily quota exhausted")
     last_error = None
     for attempt in range(EMBED_MAX_RETRIES):
         try:
@@ -74,8 +79,12 @@ def _gemini_embed_with_retry(texts: List[str], task_type: str) -> List[List[floa
         except Exception as e:
             last_error = e
             err = str(e)
-            if "429" in err or "quota" in err.lower():
-                wait = min(90, 2 ** attempt * 8)
+            if "quota exceeded" in err.lower():
+                _gemini_quota_exhausted = True
+                logger.warning(f"Gemini daily embedding quota exceeded, marking exhausted: {e}")
+                raise RuntimeError(f"Gemini daily quota exceeded: {e}")
+            if "429" in err:
+                wait = min(30, 2 ** attempt * 4)
                 logger.warning(f"Gemini rate limit, retry in {wait}s ({attempt + 1}/{EMBED_MAX_RETRIES})")
                 time.sleep(wait)
                 continue
@@ -120,17 +129,30 @@ def get_embedding(text: str) -> List[float]:
     return get_embeddings_batch([text])[0]
 
 
+_query_cache: dict = {}
+
 def get_query_embedding(text: str) -> List[float]:
-    """Query embedding — BGE prefix for local, retrieval_query for Gemini."""
+    """Query embedding — BGE prefix for local, retrieval_query for Gemini with in-memory caching."""
+    if text in _query_cache:
+        return _query_cache[text]
+
     if _provider() == "local" or (_provider() == "auto" and not is_api_key_configured()):
-        return _local_embed_batch([BGE_QUERY_PREFIX + text])[0]
+        res = _local_embed_batch([BGE_QUERY_PREFIX + text])[0]
+        _query_cache[text] = res
+        return res
 
     if _provider() == "gemini":
-        return _embed_with_provider([text], "retrieval_query")[0]
+        res = _embed_with_provider([text], "retrieval_query")[0]
+        _query_cache[text] = res
+        return res
 
     # auto with Gemini key: try Gemini query embed, fall back to BGE
     try:
-        return _gemini_embed_with_retry([text], "retrieval_query")[0]
+        res = _gemini_embed_with_retry([text], "retrieval_query")[0]
+        _query_cache[text] = res
+        return res
     except Exception as e:
         logger.warning(f"Gemini query embed failed ({e}), using local model")
-        return _local_embed_batch([BGE_QUERY_PREFIX + text])[0]
+        res = _local_embed_batch([BGE_QUERY_PREFIX + text])[0]
+        _query_cache[text] = res
+        return res

@@ -502,6 +502,24 @@ Return JSON format:
             if rag_result:
                 return rag_result
 
+            # Level 3–8: Semantic Multi-Facet RAG Composition with AST Constraint Gating
+            try:
+                from app.services.constraint_extraction_service import constraint_extraction_service
+                from app.services.rag_composition_service import rag_composition_service
+
+                target_constraints = constraint_extraction_service.extract_query_constraints(
+                    user_question, schema_context
+                )
+                composed_result = rag_composition_service.compose_sql(
+                    target_constraints=target_constraints,
+                    retrieved_examples=retrieved_examples,
+                    schema_context=schema_context,
+                )
+                if composed_result:
+                    return composed_result
+            except Exception as e:
+                logger.warning(f"RAG composition attempt skipped: {e}")
+
         if not is_api_key_configured():
             logger.info("Mock SQL fallback (no LLM key).")
             tbl = self._extract_table_from_schema(schema_context)

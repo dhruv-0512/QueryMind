@@ -148,14 +148,19 @@ class SqlExampleRetrievalService:
 
     async def retrieve_examples(self, query: str, limit: int = 3) -> List[Dict[str, Any]]:
         """Return top semantically similar question-SQL pairs with similarity scores."""
-        self._ensure_connected()
-
-        query_vector = get_query_embedding(query)
-        results = self.collection.query(
-            query_embeddings=[query_vector],
-            n_results=limit,
-            include=["metadatas", "distances"],
-        )
+        try:
+            self._ensure_connected()
+            if not self.collection:
+                return []
+            query_vector = get_query_embedding(query)
+            results = self.collection.query(
+                query_embeddings=[query_vector],
+                n_results=limit,
+                include=["metadatas", "distances"],
+            )
+        except Exception as e:
+            logger.warning(f"Vector retrieval skipped ({e})")
+            return []
 
         retrieved = []
         if results and results.get("metadatas"):
