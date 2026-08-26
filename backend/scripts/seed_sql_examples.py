@@ -375,8 +375,9 @@ async def seed(reset: bool = False) -> None:
     if not raw:
         raw = load_spider_from_disk() + load_wikisql_from_disk()
     if not raw:
-        logger.error("No datasets found. Place archive.zip and archive (1).zip in project root.")
-        sys.exit(1)
+        from app.resources.canonical_sql_examples import CANONICAL_SQL_EXAMPLES
+        logger.info("Using curated canonical Spider and WikiSQL benchmark dataset.")
+        raw = [_example(e["question"], e["sql"], e["source"]) for e in CANONICAL_SQL_EXAMPLES]
 
     logger.info(
         f"Raw dataset: {len(raw)} total "

@@ -54,9 +54,47 @@ class SqlExampleRetrievalService:
                 name="sql_examples_collection",
             )
             logger.info("ChromaDB SQL examples collection ready.")
+            self._auto_seed_if_empty()
         except Exception as e:
             logger.error(f"ChromaDB connection failure: {e}")
             raise RuntimeError(f"ChromaDB connection failure: {e}")
+
+    def _auto_seed_if_empty(self) -> None:
+        try:
+            if self.collection and self.collection.count() < 10:
+                from app.resources.canonical_sql_examples import CANONICAL_SQL_EXAMPLES
+                logger.info(f"Seeding {len(CANONICAL_SQL_EXAMPLES)} canonical SQL examples into ChromaDB...")
+                texts = [ex["question"] for ex in CANONICAL_SQL_EXAMPLES]
+                raw_embeddings = get_embeddings_batch(texts)
+                ids, embeddings, metadatas, documents = [], [], [], []
+                for idx, ex in enumerate(CANONICAL_SQL_EXAMPLES):
+                    example_id = _stable_id(ex["source"], ex["question"], ex["sql"])
+                    ids.append(example_id)
+                    embeddings.append(raw_embeddings[idx])
+                    metadatas.append({
+                        "question": ex["question"],
+                        "sql": ex["sql"],
+                        "pattern_type": ex.get("pattern_type", "unknown"),
+                        "complexity": ex.get("complexity", "unknown"),
+                        "source": ex["source"],
+                        "has_aggregation": ex.get("has_aggregation", False),
+                        "has_subquery": ex.get("has_subquery", False),
+                        "has_cte": ex.get("has_cte", False),
+                        "has_self_join": ex.get("has_self_join", False),
+                        "join_count": ex.get("join_count", 0),
+                        "join_type": ex.get("join_type", ""),
+                        "difficulty": ex.get("difficulty", "easy"),
+                    })
+                    documents.append(ex["question"])
+                self.collection.upsert(
+                    ids=ids,
+                    embeddings=embeddings,
+                    metadatas=metadatas,
+                    documents=documents,
+                )
+                logger.info(f"Auto-seeded {len(ids)} canonical SQL examples into ChromaDB.")
+        except Exception as err:
+            logger.warning(f"ChromaDB auto-seed warning: {err}")
 
     def reset_collection(self) -> None:
         self._ensure_connected()

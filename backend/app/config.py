@@ -1,3 +1,4 @@
+import os
 from typing import Dict, Any
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 from pydantic import field_validator, PrivateAttr
@@ -64,7 +65,10 @@ class Settings(BaseSettings):
     CHROMADB_HOST: str = "localhost"
     CHROMADB_PORT: int = 8000
     CHROMADB_MODE: str = "persistent"  # "persistent" or "http"
-    CHROMADB_PATH: str = "./chroma_data"
+    CHROMADB_PATH: str = os.environ.get(
+        "CHROMADB_PATH",
+        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "chroma_data")
+    )
 
     # LLM Configuration
     GEMINI_API_KEY: str = ""

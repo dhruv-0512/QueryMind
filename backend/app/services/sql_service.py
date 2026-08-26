@@ -210,30 +210,156 @@ class SqlService:
             return None
         return adapted + ";"
 
+    NUMERIC_TYPES = {
+        "INTEGER", "BIGINT", "SMALLINT", "FLOAT", "DOUBLE",
+        "REAL", "NUMERIC", "SERIAL", "DOUBLE PRECISION", "DECIMAL"
+    }
+
+    def _extract_column_types_for_table(self, schema_context: str, table_name: str) -> Dict[str, str]:
+        col_types: Dict[str, str] = {}
+        blocks = re.findall(
+            rf'CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:["\w]+\.)?"?{re.escape(table_name)}"?[^;]*?\((.*?)\);',
+            schema_context,
+            re.IGNORECASE | re.DOTALL,
+        )
+        target_schema = blocks[0] if blocks else schema_context
+        for line in target_schema.split("\n"):
+            line = line.strip()
+            m = re.search(
+                r'"([^"]+)"\s+(TEXT|INTEGER|BIGINT|SMALLINT|BOOLEAN|TIMESTAMP|FLOAT|DOUBLE|REAL|NUMERIC|SERIAL|UUID|DATE|VARCHAR|INTERVAL|DOUBLE PRECISION|DECIMAL)',
+                line,
+                re.IGNORECASE,
+            )
+            if m:
+                col_types[m.group(1).lower()] = m.group(2).upper()
+            else:
+                m2 = re.search(
+                    r'\b([a-zA-Z0-9_]+)\s+(TEXT|INTEGER|BIGINT|SMALLINT|BOOLEAN|TIMESTAMP|FLOAT|DOUBLE|REAL|NUMERIC|SERIAL|UUID|DATE|VARCHAR|INTERVAL|DOUBLE PRECISION|DECIMAL)',
+                    line,
+                    re.IGNORECASE,
+                )
+                if m2 and not line.startswith(("CREATE", "PRIMARY", "FOREIGN", "INDEX", ")")):
+                    col_types[m2.group(1).lower()] = m2.group(2).upper()
+        return col_types
+
+    def _try_direct_single_table_aggregate(
+        self,
+        schema_context: str,
+        user_question: str,
+    ) -> Optional[Dict[str, Any]]:
+        q_clean = user_question.strip().lower()
+
+        # Guard: Check for complex query keywords that must be routed to LLM
+        complex_guard = re.search(
+            r'\b(group\s+by|for\s+each|each\s+|per\s+|by\s+|having|join|greater\s+than|higher\s+than|less\s+than|more\s+than|where|filter|when|whose|with|who)\b',
+            q_clean,
+        )
+        if complex_guard:
+            return None
+
+        # 1. Unambiguously identify target table
+        all_tables = self._extract_all_tables_from_schema(schema_context)
+        if not all_tables:
+            return None
+
+        if len(all_tables) == 1:
+            target_table = all_tables[0]
+        else:
+            matching_tables = []
+            for tbl in all_tables:
+                tbl_low = tbl.lower()
+                if tbl_low in q_clean or (tbl_low.endswith('s') and tbl_low[:-1] in q_clean):
+                    matching_tables.append(tbl)
+            if len(matching_tables) != 1:
+                # Ambiguous table reference in multi-table workspace -> route to LLM
+                return None
+            target_table = matching_tables[0]
+
+        col_types = self._extract_column_types_for_table(schema_context, target_table)
+        schema_cols = self._extract_columns_for_table(schema_context, target_table)
+        if not schema_cols:
+            return None
+
+        # 2. Check for COUNT pattern (table-level count)
+        if re.search(r'\b(total\s+(?:number|count)\s+of|count\s+(?:all\s+)?|how\s+many)\b', q_clean) and not re.search(r'\b(average|avg|mean|sum|min|max|lowest|highest)\b', q_clean):
+            count_sql = f'SELECT COUNT(*) AS total_{target_table} FROM "{target_table}";'
+            logger.info(f"Deterministic direct COUNT matched on '{target_table}'")
+            return {
+                "sql": count_sql,
+                "explanation": f"Calculated total count directly from '{target_table}' using deterministic schema aggregation.",
+                "confidence": 0.98,
+                "rag_mode": "direct",
+            }
+
+        # 3. Detect Aggregate Operation (AVG, SUM, MIN, MAX)
+        op = None
+        op_func = None
+        if re.search(r'\b(average|avg|mean)\b', q_clean):
+            op = "avg"
+            op_func = "AVG"
+        elif re.search(r'\b(total\s+(?:amount|revenue|spend|sales|value)|sum)\b', q_clean):
+            op = "sum"
+            op_func = "SUM"
+        elif re.search(r'\b(minimum|min|lowest|smallest)\b', q_clean):
+            op = "min"
+            op_func = "MIN"
+        elif re.search(r'\b(maximum|max|highest|largest|greatest|most expensive)\b', q_clean):
+            op = "max"
+            op_func = "MAX"
+
+        if not op or not op_func:
+            return None
+
+        # 4. Unambiguously map requested column
+        target_col = None
+        for col in schema_cols:
+            col_low = col.lower()
+            if col_low in q_clean or (col_low.endswith('s') and col_low[:-1] in q_clean):
+                if target_col is not None and target_col != col:
+                    # Multiple matching columns found in question -> Ambiguous -> LLM
+                    return None
+                target_col = col
+
+        # Synonym fallback if only 1 numeric column exists in table
+        if not target_col:
+            numeric_cols = [c for c in schema_cols if col_types.get(c.lower(), "") in self.NUMERIC_TYPES]
+            if len(numeric_cols) == 1 and re.search(r'\b(amount|spending|price|cost|revenue|sales|val|value)\b', q_clean):
+                target_col = numeric_cols[0]
+
+        if not target_col:
+            return None
+
+        # 5. Type validation: AVG and SUM require numeric types
+        c_type = col_types.get(target_col.lower(), "NUMERIC")
+        if op in ("avg", "sum") and c_type not in self.NUMERIC_TYPES:
+            return None
+
+        # 6. Generate Clean Deterministic SQL
+        sql = f'SELECT {op_func}("{target_col}") AS {op}_{target_col} FROM "{target_table}";'
+        logger.info(f"Deterministic direct {op_func} matched on '{target_table}.{target_col}'")
+        return {
+            "sql": sql,
+            "explanation": f"Calculated {op_func} of '{target_col}' on '{target_table}' directly using deterministic schema aggregation.",
+            "confidence": 0.98,
+            "rag_mode": "direct",
+        }
+
     def _try_rag_direct(
         self,
         schema_context: str,
         user_question: str,
         retrieved_examples: List[Dict[str, Any]],
     ) -> Optional[Dict[str, Any]]:
-        # 1. Deterministic intent matching for standard single-table queries (Zero-LLM Fast Path)
-        q_clean = user_question.strip().lower()
-        target_table = self._extract_table_from_schema(schema_context, user_question)
-        schema_cols = self._extract_columns_for_table(schema_context, target_table)
-
-        # Pattern: Count all rows / total count of a table
-        if re.search(r'\b(total\s+(?:number|count)\s+of|count\s+(?:all\s+)?|how\s+many)\b', q_clean) and not re.search(r'\b(group|by|top|sum|avg|join|each)\b', q_clean):
-            count_sql = f'SELECT COUNT(*) AS total_{target_table} FROM "{target_table}";'
-            logger.info(f"RAG direct pattern matched: total count on '{target_table}'")
-            return {
-                "sql": count_sql,
-                "explanation": f"Calculated total count directly from '{target_table}' using deterministic RAG template.",
-                "confidence": 0.98,
-                "rag_mode": "direct",
-            }
+        # 1. Deterministic intent matching for standard single-table aggregate queries (Zero-LLM Fast Path)
+        direct_agg = self._try_direct_single_table_aggregate(schema_context, user_question)
+        if direct_agg:
+            return direct_agg
 
         if not retrieved_examples:
             return None
+
+        target_table = self._extract_table_from_schema(schema_context, user_question)
+        schema_cols = self._extract_columns_for_table(schema_context, target_table)
 
         # 2. Iterate through top-5 retrieved ChromaDB examples
         for ex in retrieved_examples[:5]:
