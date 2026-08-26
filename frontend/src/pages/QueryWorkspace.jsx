@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Send, AlertCircle, Database, Table, BarChart2, Trash2 } from 'lucide-react';
+import { Send, AlertCircle, Database, Table, BarChart2, Trash2, Sparkles, Zap } from 'lucide-react';
 import { api } from '../services/api';
 import { SQLViewer } from '../components/SQLViewer';
 import { ResultsTable } from '../components/ResultsTable';
@@ -345,28 +345,54 @@ export const QueryWorkspace = ({ selectedDbId }) => {
 
           {isLoading && (
             <div
+              className="surface animate-fade-in"
               style={{
                 display: 'flex',
-                alignItems: 'center',
+                flexDirection: 'column',
                 gap: 10,
-                padding: '14px 16px',
-                background: 'var(--bg-surface)',
-                border: '1px solid var(--border-subtle)',
-                borderRadius: 6,
-                fontSize: '0.8125rem',
-                color: 'var(--text-muted)',
+                padding: '16px 18px',
+                background: 'rgba(99, 102, 241, 0.04)',
+                border: '1px solid var(--accent-border)',
+                borderRadius: 8,
               }}
             >
-              <span style={{
-                width: 14,
-                height: 14,
-                border: '2px solid var(--border-strong)',
-                borderTopColor: 'var(--accent)',
-                borderRadius: '50%',
-                animation: 'spin 0.7s linear infinite',
-                flexShrink: 0,
-              }} />
-              Generating SQL and executing query…
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{
+                    width: 15,
+                    height: 15,
+                    border: '2px solid var(--border-strong)',
+                    borderTopColor: 'var(--accent)',
+                    borderRadius: '50%',
+                    animation: 'spin 0.7s linear infinite',
+                    flexShrink: 0,
+                  }} />
+                  <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                    Generating SQL & Executing Query…
+                  </span>
+                </div>
+
+                <span
+                  className="badge badge-accent"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: '0.68rem' }}
+                >
+                  <Sparkles size={11} />
+                  AI / LLM Pipeline Active
+                </span>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Grounding Schema</span>
+                <span>➔</span>
+                <span style={{ color: 'var(--text-secondary)' }}>Vector RAG Match</span>
+                <span>➔</span>
+                <span style={{ color: '#a5b4fc', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                  <Sparkles size={10} style={{ color: 'var(--accent)' }} />
+                  LLM Model Inference
+                </span>
+                <span>➔</span>
+                <span style={{ color: 'var(--text-muted)' }}>PostgreSQL Query</span>
+              </div>
             </div>
           )}
 
@@ -395,7 +421,7 @@ export const QueryWorkspace = ({ selectedDbId }) => {
             <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
               {/* Stats bar */}
-              <div className="status-bar">
+              <div className="status-bar" style={{ flexWrap: 'wrap' }}>
                 <div className="status-item">
                   <span className="status-item-label">Latency</span>
                   <span className="status-item-value">
@@ -419,6 +445,38 @@ export const QueryWorkspace = ({ selectedDbId }) => {
                     {queryResult.cached ? 'Hit' : 'Miss'}
                   </span>
                 </div>
+                <div style={{ width: 1, background: 'var(--border-subtle)', alignSelf: 'stretch' }} />
+                <div className="status-item">
+                  <span className="status-item-label">LLM Call</span>
+                  <span
+                    className="status-item-value"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      color: queryResult.llm_invoked ? '#a5b4fc' : (queryResult.cached ? 'var(--color-success)' : '#38bdf8'),
+                    }}
+                  >
+                    {queryResult.llm_invoked ? (
+                      <>
+                        <Sparkles size={12} style={{ color: 'var(--accent)' }} />
+                        <span>Invoked ({queryResult.llm_model || 'Gemini 3.5 Flash'})</span>
+                      </>
+                    ) : queryResult.cached ? (
+                      <>
+                        <Zap size={12} style={{ color: 'var(--color-success)' }} />
+                        <span>Bypassed (Cache Hit)</span>
+                      </>
+                    ) : queryResult.rag_mode === 'direct' ? (
+                      <>
+                        <Zap size={12} style={{ color: '#38bdf8' }} />
+                        <span>Bypassed (Direct RAG)</span>
+                      </>
+                    ) : (
+                      <span>Not Invoked ({queryResult.rag_mode || 'Rule Engine'})</span>
+                    )}
+                  </span>
+                </div>
                 {queryResult.datasources_used && queryResult.datasources_used.length > 1 && (
                   <>
                     <div style={{ width: 1, background: 'var(--border-subtle)', alignSelf: 'stretch' }} />
@@ -436,6 +494,10 @@ export const QueryWorkspace = ({ selectedDbId }) => {
                   sql={queryResult.sql}
                   explanation={queryResult.explanation}
                   confidence={queryResult.confidence}
+                  llm_invoked={queryResult.llm_invoked}
+                  llm_model={queryResult.llm_model}
+                  cached={queryResult.cached}
+                  rag_mode={queryResult.rag_mode}
                 />
               </div>
 

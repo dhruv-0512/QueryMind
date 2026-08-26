@@ -3,6 +3,7 @@ import { Database, History, Shield, LogOut, Terminal, User, Menu, X } from 'luci
 import { clearTokens, getTokens } from './services/api';
 
 import { DemoBanner } from './components/DemoBanner';
+import { GlobalTopProgressBar, ApiStatusIndicator } from './components/ApiStatusIndicator';
 
 const Login         = lazy(() => import('./pages/Login').then(m => ({ default: m.Login })));
 const Register      = lazy(() => import('./pages/Register').then(m => ({ default: m.Register })));
@@ -113,12 +114,16 @@ const App = () => {
 
   if (!isAuthenticated) {
     return (
-      <Suspense fallback={<PageFallback />}>
-        {currentPage === 'register'
-          ? <Register onNavigateToLogin={navigateToLogin} />
-          : <Login onLoginSuccess={handleLoginSuccess} onNavigateToRegister={navigateToRegister} />
-        }
-      </Suspense>
+      <>
+        <GlobalTopProgressBar />
+        <ApiStatusIndicator floating />
+        <Suspense fallback={<PageFallback />}>
+          {currentPage === 'register'
+            ? <Register onNavigateToLogin={navigateToLogin} />
+            : <Login onLoginSuccess={handleLoginSuccess} onNavigateToRegister={navigateToRegister} />
+          }
+        </Suspense>
+      </>
     );
   }
 
@@ -138,6 +143,7 @@ const App = () => {
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--bg-base)' }}
          className="md:flex-row">
+      <GlobalTopProgressBar />
 
       {/* ── Mobile Top Bar ── */}
       <header
@@ -161,6 +167,7 @@ const App = () => {
           <span style={{ fontWeight: 700, fontSize: '0.9rem', letterSpacing: '-0.01em', color: 'var(--text-primary)' }}>
             QueryMind
           </span>
+          <ApiStatusIndicator compact />
         </div>
 
         {/* Top Right Mobile Logout Button */}
@@ -385,7 +392,9 @@ const App = () => {
             </div>
 
             {/* Top Right User Badge & Log Out Button */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+              <ApiStatusIndicator />
+
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <div style={{
                   width: 26,

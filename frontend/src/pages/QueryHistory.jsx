@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Calendar, ShieldCheck, Clock, Terminal, AlertTriangle, AlertOctagon, CheckCircle2, Search } from 'lucide-react';
+import { AlertTriangle, AlertOctagon, CheckCircle2, Search } from 'lucide-react';
 import { api } from '../services/api';
 
 /*

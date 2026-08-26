@@ -129,6 +129,10 @@ async def execute_nl_query(
         try:
             cached_json = json.loads(cached_data)
             cached_json["cached"] = True
+            cached_json["llm_invoked"] = False
+            cached_json["llm_provider"] = "redis_cache"
+            cached_json["llm_model"] = None
+            cached_json["rag_mode"] = "cache_hit"
 
             await kafka_service.publish_event(
                 topic="query-events",
@@ -453,6 +457,19 @@ async def execute_nl_query(
         raise HTTPException(status_code=500, detail=f"Query execution failed: {error_msg}")
 
     # Step 6: Cache + Event + History
+    rag_mode = gen_result.get("rag_mode", "llm_adapt")
+    llm_invoked = rag_mode in ("llm_adapt", "deepseek_llm")
+    llm_provider = (
+        "deepseek" if rag_mode == "deepseek_llm"
+        else ("gemini" if rag_mode == "llm_adapt"
+        else ("direct_rag" if rag_mode == "direct"
+        else ("mock" if rag_mode == "mock" else "fallback")))
+    )
+    llm_model = (
+        settings.DEEPSEEK_MODEL if rag_mode == "deepseek_llm"
+        else ("gemini-3.5-flash" if rag_mode == "llm_adapt" else None)
+    )
+
     response_payload = {
         "sql": sql,
         "explanation": explanation,
@@ -461,6 +478,10 @@ async def execute_nl_query(
         "execution_time": latency,
         "cached": False,
         "datasources_used": [str(d) for d in db_ids_list],
+        "llm_invoked": llm_invoked,
+        "llm_provider": llm_provider,
+        "llm_model": llm_model,
+        "rag_mode": rag_mode,
     }
 
     try:

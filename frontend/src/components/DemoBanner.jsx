@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Info, X, Rocket } from 'lucide-react';
+import { Info, X } from 'lucide-react';
 
 export const DemoBanner = ({ alwaysShow = false }) => {
   const [isDismissed, setIsDismissed] = useState(() => {

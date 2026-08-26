@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { Shield, Users, ScrollText, BarChart3, Clock, HelpCircle, HardDrive } from 'lucide-react';
 import { api } from '../services/api';
 
 /*

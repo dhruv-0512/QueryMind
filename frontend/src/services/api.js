@@ -1,5 +1,5 @@
 const rawBaseUrl = import.meta.env.VITE_API_URL || 'https://querymind-lnq3.onrender.com';
-const BASE_URL = rawBaseUrl.replace(/\/+$/, '');
+export const BASE_URL = rawBaseUrl.replace(/\/+$/, '');
 
 export const getTokens = () => {
   return {
@@ -33,7 +33,67 @@ const onRefreshed = (token) => {
   refreshSubscribers = [];
 };
 
+// ─── API Activity Tracking ─────────────────────────────────
+let reqIdCounter = 0;
+const activeRequestsMap = new Map();
+let lastCompletedRequest = null;
+const activityListeners = new Set();
+
+export const getApiActivityState = () => ({
+  activeCount: activeRequestsMap.size,
+  isLoading: activeRequestsMap.size > 0,
+  activeRequests: Array.from(activeRequestsMap.values()),
+  lastCompletedRequest,
+  baseUrl: BASE_URL,
+});
+
+export const subscribeApiActivity = (callback) => {
+  activityListeners.add(callback);
+  // Call immediately with current state
+  try {
+    callback(getApiActivityState());
+  } catch (err) {
+    console.error('Error invoking API activity listener:', err);
+  }
+
+  return () => {
+    activityListeners.delete(callback);
+  };
+};
+
+const notifyActivity = () => {
+  const state = getApiActivityState();
+  activityListeners.forEach((listener) => {
+    try {
+      listener(state);
+    } catch (err) {
+      console.error('Error in API activity subscriber:', err);
+    }
+  });
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('api_activity_change', { detail: state }));
+  }
+};
+
 async function apiRequest(path, options = {}) {
+  const reqId = ++reqIdCounter;
+  const method = (options.method || 'GET').toUpperCase();
+  const startTime = Date.now();
+
+  const reqInfo = {
+    id: reqId,
+    method,
+    path,
+    startTime,
+  };
+
+  activeRequestsMap.set(reqId, reqInfo);
+  notifyActivity();
+
+  let reqStatus = null;
+  let reqError = null;
+
   const { accessToken } = getTokens();
   
   const headers = new Headers(options.headers || {});
@@ -41,7 +101,7 @@ async function apiRequest(path, options = {}) {
     headers.set('Authorization', `Bearer ${accessToken}`);
   }
   
-  // Set Content-Type unless we are uploading a file (FormData needs boundary set automatically by fetch)
+  // Set Content-Type unless uploading FormData (boundary set automatically by fetch)
   if (!(options.body instanceof FormData) && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
   }
@@ -52,8 +112,10 @@ async function apiRequest(path, options = {}) {
       headers,
     });
 
+    reqStatus = response.status;
+
     if (response.status === 401) {
-      // Don't attempt refresh for login routes
+      // Don't attempt refresh for login/register routes
       if (path === '/auth/login' || path === '/auth/register') {
         const errorData = await response.json().catch(() => ({ detail: 'Invalid credentials' }));
         throw new Error(errorData.detail || 'Authentication failed');
@@ -92,14 +154,18 @@ async function apiRequest(path, options = {}) {
       }
 
       // Return a promise that resolves when the token refresh finishes
-      return new Promise((resolve, reject) => {
+      return await new Promise((resolve, reject) => {
         subscribeTokenRefresh((newToken) => {
           headers.set('Authorization', `Bearer ${newToken}`);
           fetch(`${BASE_URL}${path}`, { ...options, headers })
             .then(async (res) => {
+              reqStatus = res.status;
               if (!res.ok) {
                 const errorData = await res.json().catch(() => ({ detail: 'Request failed' }));
                 throw new Error(errorData.detail || 'Request failed after token refresh');
+              }
+              if (res.status === 204) {
+                return null;
               }
               return res.json();
             })
@@ -113,7 +179,7 @@ async function apiRequest(path, options = {}) {
       const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));
       let detailMsg = 'Request failed';
       if (Array.isArray(errorData.detail)) {
-        detailMsg = errorData.detail.map(d => {
+        detailMsg = errorData.detail.map((d) => {
           const field = d.loc && d.loc.length > 0 ? d.loc[d.loc.length - 1] : '';
           return field ? `${field}: ${d.msg}` : d.msg;
         }).join(' | ');
@@ -129,13 +195,28 @@ async function apiRequest(path, options = {}) {
 
     return await response.json();
   } catch (error) {
+    reqError = error;
     loggerError(error);
     throw error;
+  } finally {
+    const duration = Date.now() - startTime;
+    lastCompletedRequest = {
+      id: reqId,
+      method,
+      path,
+      status: reqStatus,
+      duration,
+      timestamp: Date.now(),
+      success: !reqError,
+      error: reqError ? reqError.message : null,
+    };
+    activeRequestsMap.delete(reqId);
+    notifyActivity();
   }
 }
 
 function loggerError(error) {
-  console.error("API Call error:", error.message || error);
+  console.error('API Call error:', error.message || error);
 }
 
 export const api = {

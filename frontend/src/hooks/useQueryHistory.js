@@ -37,7 +37,11 @@ export function useQueryHistory() {
 
   const save = (arr) => {
     historyRef.current = arr;
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(arr)); } catch {}
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(arr));
+    } catch (e) {
+      console.error('Failed to save query history:', e);
+    }
   };
 
   // ── Public API ───────────────────────────────────────────────────────────

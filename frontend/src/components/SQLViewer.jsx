@@ -1,19 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Copy, Check } from 'lucide-react';
-
-/*
-  Why: Old SQLViewer had:
-    - "GENERATED QUERY" in uppercase tracking-wider indigo text + Terminal icon
-    - Confidence as a rounded-full pill (e.g. emerald/amber/rose colored)
-    - The explanation in a large bg-indigo-950/20 bordered box with HelpCircle icon
-    - Copy button as a styled pill with border
-
-  Fix:
-    - Section label as a simple small-caps muted text
-    - Confidence as a compact badge
-    - Explanation as a plain muted paragraph below the code block
-    - Copy button as a minimal text button, top-right of the code block
-*/
+import { Copy, Check, Sparkles, Zap, Cpu } from 'lucide-react';
 
 const SQL_KEYWORDS = new Set([
   'SELECT', 'FROM', 'WHERE', 'AND', 'OR', 'NOT', 'IN', 'LIKE', 'BETWEEN', 'IS', 'NULL',
@@ -29,9 +15,9 @@ function highlightSQL(sql) {
   const tokens = sql.split(/(\b\w+\b|'[^']*'|"[^"]*"|`[^`]*`|--[^\n]*|\n|.)/g);
   return tokens.map((token, i) => {
     if (!token) return null;
-    if (/^--/.test(token))                        return <span key={i} style={{ color: '#52525b', fontStyle: 'italic' }}>{token}</span>;
+    if (/^--/.test(token)) return <span key={i} style={{ color: '#52525b', fontStyle: 'italic' }}>{token}</span>;
     if (/^'[^']*'$/.test(token) || /^"[^"]*"$/.test(token)) return <span key={i} style={{ color: '#d4a574' }}>{token}</span>;
-    if (/^\d+\.?\d*$/.test(token))                return <span key={i} style={{ color: '#a78bfa' }}>{token}</span>;
+    if (/^\d+\.?\d*$/.test(token)) return <span key={i} style={{ color: '#a78bfa' }}>{token}</span>;
     if (SQL_KEYWORDS.has(token.toUpperCase()) && /^[A-Za-z]+$/.test(token)) {
       return <span key={i} style={{ color: '#818cf8', fontWeight: 500 }}>{token.toUpperCase()}</span>;
     }
@@ -40,7 +26,15 @@ function highlightSQL(sql) {
   });
 }
 
-export const SQLViewer = ({ sql, explanation, confidence }) => {
+export const SQLViewer = ({
+  sql,
+  explanation,
+  confidence,
+  llm_invoked = false,
+  llm_model = null,
+  cached = false,
+  rag_mode = null,
+}) => {
   const [copied, setCopied] = useState(false);
 
   const highlighted = useMemo(() => highlightSQL(sql), [sql]);
@@ -67,11 +61,54 @@ export const SQLViewer = ({ sql, explanation, confidence }) => {
         flexWrap: 'wrap',
         gap: 8,
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <span className="section-label">Generated SQL</span>
           <span className={`badge ${confidenceClass}`}>
             {Math.round(confidence * 100)}% confidence
           </span>
+
+          {/* LLM Invocation Status Indicator */}
+          {llm_invoked ? (
+            <span
+              className="badge badge-accent"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                boxShadow: '0 0 8px rgba(99, 102, 241, 0.25)',
+              }}
+              title="This SQL query was generated via LLM model inference"
+            >
+              <Sparkles size={11} />
+              LLM Invoked ({llm_model || 'Gemini 3.5 Flash'})
+            </span>
+          ) : cached ? (
+            <span
+              className="badge badge-success"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
+              title="Retrieved from Redis cache — LLM inference was bypassed"
+            >
+              <Zap size={11} />
+              Cache Hit (LLM Bypassed)
+            </span>
+          ) : rag_mode === 'direct' ? (
+            <span
+              className="badge badge-neutral"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#38bdf8' }}
+              title="Constructed directly from deterministic RAG template match"
+            >
+              <Zap size={11} />
+              Direct RAG (LLM Bypassed)
+            </span>
+          ) : (
+            <span
+              className="badge badge-neutral"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
+            >
+              <Cpu size={11} />
+              Engine: {rag_mode || 'Rule-Based'}
+            </span>
+          )}
         </div>
 
         <button

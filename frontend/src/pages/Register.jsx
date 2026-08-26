@@ -6,7 +6,7 @@ import { DemoBanner } from '../components/DemoBanner';
 export const Register = ({ onNavigateToLogin }) => {
   const [email,    setEmail]    = useState('');
   const [password, setPassword] = useState('');
-  const [role,     setRole]     = useState('analyst');
+  const role = 'analyst';
   const [statusMsg, setStatusMsg] = useState({ type: '', text: '' });
   const [isLoading, setIsLoading] = useState(false);
 

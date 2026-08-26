@@ -33,3 +33,8 @@ class QueryResponse(BaseModel):
     execution_time: Optional[float] = None
     cached: bool = False
     datasources_used: Optional[List[str]] = None  # list of db_ids used
+    llm_invoked: bool = False
+    llm_provider: Optional[str] = None
+    llm_model: Optional[str] = None
+    rag_mode: Optional[str] = None
+
