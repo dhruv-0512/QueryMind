@@ -68,16 +68,20 @@ docker compose up -d --build
 
 ## Key Features & Multi-Table Engine
 
-- **Deterministic Foreign-Key Candidate Detection**: Identifies likely relationships between uploaded datasets using conventional foreign-key patterns (`*_id`, `*_key`, `*_uuid`), entity/table-name matching, target-key detection, datatype compatibility, and ≥80% value containment. Detected relationships are presented to the user for confirmation before being used for cross-table querying.
-- **Attribute Column Filtering**: Excludes generic descriptive columns such as `created_at`, `prospect_company`, `contact_emails`, `contact_mobile_phone`, `full_name`, and similar attributes from foreign-key candidate detection to reduce false positives.
-- **User Relationship Confirmation Modal**: Displays detected relationship candidates with confidence/validation information and human-readable explanations, allowing users to select and confirm relationships before cross-table querying.
-- **Dashboard & Workspace Multi-File Selection**: Select multiple database files directly on the home page (`Dashboard.jsx`) or workspace (`QueryWorkspace.jsx`) and click `Query Selected (N)`.
-- **Multi-Table SQL Support**: Supports generated queries involving INNER JOIN, LEFT JOIN, self-joins, junction tables, HAVING, and WITH (CTE) clauses.
-- **Relationship Graph & BFS Traversal**: Builds a graph from known database foreign keys and user-confirmed relationships, then traverses connected tables to expand relevant schema context for multi-table querying.
-- **Multi-Schema Execution**: Queries spanning multiple uploaded datasources are qualified with per-table schema identifiers (`"user_schema_1"."table_a" JOIN "user_schema_2"."table_b"`) and executed safely with unified PostgreSQL `search_path` mapping.
-- **Curated Example Dataset**: Seeding pipeline ingests 2,500+ diverse question-SQL examples sourced directly from **Spider** and **WikiSQL**.
+- **Hybrid Execution Engine (Deterministic Fast Path & Semantic RAG)**: 
+  - **Deterministic Aggregate Fast Path**: Unconditional single-table aggregations (`COUNT(*)`, `SUM`, `AVG`, `MIN`, `MAX`) execute instantly with zero LLM tokens and direct schema type validation.
+  - **Semantic Complexity Guarding**: Queries containing filters, joins, groupings, rankings, subqueries, or date constraints are automatically routed to LLM reasoning to ensure no constraints are dropped.
+- **Live Categorical Literal Grounding**: Schema discovery automatically samples bounded distinct values for text/categorical columns (`status`, `category`, `city`, etc.) and attaches them to the grounding context. Natural-language synonyms (e.g. *"completed deliveries"*, *"finished orders"*) map directly to actual database literals (`status = 'delivered'`) without hardcoding.
+- **Deterministic Foreign-Key Candidate Detection**: Identifies relationships between uploaded datasets using conventional foreign-key patterns (`*_id`, `*_key`, `*_uuid`), entity/table-name matching, target-key detection, datatype compatibility, and value containment. Detected relationships are confirmed by the user before cross-table execution.
+- **Quantity-Qualified Ranking & Entity-Level LEFT JOIN Reasoning**:
+  - Differentiates scalar extrema from limit-based rankings (`"5 lowest"`, `"top 3"`, `"cheapest"`) to generate `ORDER BY ... LIMIT N`.
+  - When querying entity aggregates across tables, uses `LEFT JOIN` and `COALESCE(SUM(...), 0)` so entities with zero related records remain represented.
+- **Attribute Column Filtering**: Excludes descriptive columns (e.g. `created_at`, `contact_emails`, `full_name`) from foreign-key candidate detection to eliminate false relationships.
+- **Relationship Graph & BFS Traversal**: Builds a graph from known database foreign keys and confirmed relationships, traversing connected tables to supply schema context for multi-table queries.
+- **Multi-Schema Execution**: Queries spanning multiple uploaded datasources are qualified with per-table schema identifiers (`"user_schema_1"."table_a" JOIN "user_schema_2"."table_b"`) and executed safely within PostgreSQL.
+- **Curated Spider & WikiSQL ChromaDB Seeding**: Vector database seeds canonical benchmark templates covering multi-table joins, nested subqueries, CTEs, and correlated aggregations, auto-seeded idempotently on startup.
 
-> **Note on CSV Relationships**: CSV files do not inherently contain database foreign-key constraints. QueryMind therefore treats relationships detected from uploaded data as candidate relationships and requires user confirmation before using them for cross-dataset querying.
+> **Note on CSV Relationships**: CSV files do not inherently contain database foreign-key constraints. QueryMind treats relationships detected from uploaded data as candidate relationships and requires user confirmation before using them for cross-dataset querying.
 
 ## Upload Formats
 
@@ -92,40 +96,35 @@ Supported drag-and-drop formats:
 On upload:
 1. Parses file with **Pandas** (auto-detects column names & types, normalizes special characters & numeric column titles)
 2. Loads data into **PostgreSQL schema** (`user_{user_id}_{db_id}`) using asyncpg COPY protocol
-3. Extracts DDL and indexes embeddings in **ChromaDB**
+3. Extracts DDL and indexes embeddings in **ChromaDB** with sampled categorical values
 
-## Benchmark & Evaluation
+## Evaluation & Test Harness
 
-### Evaluation & Testing
-
-QueryMind includes a dedicated evaluation harness and automated test suite under `evaluation/` and `backend/tests/`.
+QueryMind includes a comprehensive evaluation harness and automated test suite under `evaluation/` and `backend/tests/`.
 
 The evaluation harness covers:
-
-- Natural-language query handling
-- Schema grounding
-- Multi-table JOIN workflows
-- 2-, 3-, and 4-table query scenarios
-- SQL validation and security checks
-- Multi-datasource execution
-
-The repository includes the benchmark datasets, evaluation scripts, generated reports, and test cases so the system can be evaluated and reproduced locally.
+- Simple unconditional aggregates (COUNT, SUM, AVG, MIN, MAX)
+- Categorical, numeric, date, and multi-condition filtering
+- Grouping, HAVING, and per-entity aggregation
+- Multi-table relationships, foreign-key joins, and LEFT JOIN preservation
+- Quantity-qualified rankings (top N, N-lowest, N-highest)
+- Complex reasoning (scalar subqueries, nested aggregations, percentage calculations)
+- Ambiguity resolution (implicit tables and columns)
+- Paraphrased linguistic variations and synonym grounding
 
 Evaluation scripts:
 
 ```bash
-python evaluation/evaluate.py
-python evaluation/evaluate_multitable.py
+python backend/evaluation/benchmark_harness.py
+python backend/evaluation/full_validation_suite.py
 ```
-
-Detailed test outputs, generated reports, and raw benchmark metrics can be found in the [`evaluation/results/`](evaluation/results) folder.
 
 ## How It Works: Multi-File Upload & Cross-Table PostgreSQL Engine
 
 ```text
 Upload CSVs
      ↓
-Schema profiling
+Schema profiling & distinct value sampling
      ↓
 Deterministic FK candidate detection
      ↓
@@ -135,27 +134,25 @@ User confirmation
      ↓
 Relationship graph & BFS expansion
      ↓
-Relationship-aware ChromaDB RAG
+Semantic complexity routing (Direct RAG vs LLM)
      ↓
 DeepSeek / Gemini SQL generation
      ↓
-sqlglot AST validation
-     ↓
-Cross-schema PostgreSQL execution
+sqlglot AST validation & PostgreSQL execution
 ```
 
 1. Users upload one or more supported datasets.
-2. QueryMind profiles the uploaded schemas and loads the data into isolated PostgreSQL schemas.
-3. When multiple datasets are selected, the deterministic FK candidate detector searches for conventional foreign-key patterns such as `customer_id → customers.id`.
-4. Candidate relationships are verified using key-pattern matching, datatype compatibility, and source-to-target value containment.
+2. QueryMind profiles the uploaded schemas, samples distinct values for categorical columns, and loads data into isolated PostgreSQL schemas.
+3. When multiple datasets are selected, the deterministic FK candidate detector searches for conventional foreign-key patterns.
+4. Candidate relationships are verified using key-pattern matching, datatype compatibility, and value containment.
 5. Detected candidates are shown to the user for confirmation.
 6. Confirmed relationships are added to the relationship graph.
 7. BFS traversal expands relevant connected table context.
-8. ChromaDB RAG retrieves relevant schema and SQL examples.
-9. DeepSeek/Gemini generates the SQL query.
-10. sqlglot validates the generated SQL AST.
-11. PostgreSQL executes the query across the selected schemas.
-12. Results are returned to the user.
+8. Complexity routing determines whether to execute via Direct Fast Path or route to LLM.
+9. ChromaDB RAG retrieves relevant schema and SQL examples.
+10. DeepSeek/Gemini generates the SQL query.
+11. sqlglot validates the generated SQL AST.
+12. PostgreSQL executes the query across the selected schemas and returns results.
 
 ## Environment Variables
 

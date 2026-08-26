@@ -6,70 +6,7 @@ import { useApiStatus } from '../hooks/useApiStatus';
  * Global slim progress bar at the very top edge of the browser viewport.
  * Automatically animates when any API/LLM call is in-flight.
  */
-export const GlobalTopProgressBar = () => {
-  const { isLoading } = useApiStatus();
-  const [visible, setVisible] = useState(false);
-  const [progress, setProgress] = useState(0);
-
-  useEffect(() => {
-    let timer;
-    let fadeTimer;
-
-    if (isLoading) {
-      setVisible(true);
-      setProgress(25);
-      timer = setInterval(() => {
-        setProgress((prev) => {
-          if (prev < 70) return prev + Math.random() * 15;
-          if (prev < 90) return prev + Math.random() * 5;
-          return prev;
-        });
-      }, 250);
-    } else if (visible) {
-      setProgress(100);
-      fadeTimer = setTimeout(() => {
-        setVisible(false);
-        setProgress(0);
-      }, 350);
-    }
-
-    return () => {
-      clearInterval(timer);
-      clearTimeout(fadeTimer);
-    };
-  }, [isLoading, visible]);
-
-  if (!visible && !isLoading) return null;
-
-  return (
-    <div
-      style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        height: '2.5px',
-        zIndex: 99999,
-        pointerEvents: 'none',
-        overflow: 'hidden',
-        background: 'rgba(99, 102, 241, 0.15)',
-      }}
-      aria-hidden="true"
-    >
-      <div
-        style={{
-          height: '100%',
-          width: `${progress}%`,
-          background: 'linear-gradient(90deg, #6366f1, #818cf8, #38bdf8, #6366f1)',
-          backgroundSize: '200% 100%',
-          boxShadow: '0 0 10px rgba(99, 102, 241, 0.8), 0 0 4px rgba(56, 189, 248, 0.8)',
-          transition: progress === 100 ? 'width 0.2s ease-out, opacity 0.3s ease-out' : 'width 0.35s ease',
-          opacity: progress === 100 && !isLoading ? 0 : 1,
-        }}
-      />
-    </div>
-  );
-};
+export const GlobalTopProgressBar = () => null;
 
 /**
  * Interactive API & LLM Activity Monitor Badge & Inspector Widget.

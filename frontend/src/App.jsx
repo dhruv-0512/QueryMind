@@ -3,7 +3,7 @@ import { Database, History, Shield, LogOut, Terminal, User, Menu, X } from 'luci
 import { clearTokens, getTokens } from './services/api';
 
 import { DemoBanner } from './components/DemoBanner';
-import { GlobalTopProgressBar, ApiStatusIndicator } from './components/ApiStatusIndicator';
+import { ApiStatusIndicator } from './components/ApiStatusIndicator';
 
 const Login         = lazy(() => import('./pages/Login').then(m => ({ default: m.Login })));
 const Register      = lazy(() => import('./pages/Register').then(m => ({ default: m.Register })));
@@ -115,7 +115,6 @@ const App = () => {
   if (!isAuthenticated) {
     return (
       <>
-        <GlobalTopProgressBar />
         <ApiStatusIndicator floating />
         <Suspense fallback={<PageFallback />}>
           {currentPage === 'register'
@@ -143,7 +142,6 @@ const App = () => {
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--bg-base)' }}
          className="md:flex-row">
-      <GlobalTopProgressBar />
 
       {/* ── Mobile Top Bar ── */}
       <header
