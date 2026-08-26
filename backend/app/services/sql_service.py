@@ -15,7 +15,7 @@ from sqlalchemy import text
 
 logger = logging.getLogger(__name__)
 
-RAG_DIRECT_THRESHOLD = 0.78
+RAG_DIRECT_THRESHOLD = 0.60
 
 # Circuit breaker for the Gemini API: trips after 5 consecutive failures,
 # stays open 30s (fail-fast), then half-open for one trial.
@@ -51,23 +51,41 @@ class SqlService:
             self.model = None
             self.llm_provider = "mock"
 
-    def _extract_table_from_schema(self, schema_context: str) -> str:
-        match = re.search(r'Table:\s*"([^"]+)"', schema_context, re.IGNORECASE)
-        if match:
-            return match.group(1)
-        match = re.search(
-            r'CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?["\w]+\."?(\w+)"?',
+    def _extract_all_tables_from_schema(self, schema_context: str) -> List[str]:
+        found = re.findall(
+            r'CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:["\w]+\.)?"?(\w+)"?',
             schema_context,
             re.IGNORECASE,
         )
-        if match:
-            return match.group(1)
-        match = re.search(
-            r'CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?"?(\w+)"?',
+        if found:
+            return list(dict.fromkeys(found))
+        match = re.findall(r'Table:\s*"([^"]+)"', schema_context, re.IGNORECASE)
+        return list(dict.fromkeys(match)) if match else ["my_table"]
+
+    def _extract_table_from_schema(self, schema_context: str, question: Optional[str] = None) -> str:
+        tables = self._extract_all_tables_from_schema(schema_context)
+        if not tables:
+            return "my_table"
+
+        if question:
+            q_lower = question.lower()
+            # Match exact or singular table name in question
+            for tbl in tables:
+                tbl_low = tbl.lower()
+                if tbl_low in q_lower or (tbl_low.endswith('s') and tbl_low[:-1] in q_lower):
+                    return tbl
+
+        return tables[0]
+
+    def _extract_columns_for_table(self, schema_context: str, table_name: str) -> List[str]:
+        blocks = re.findall(
+            rf'CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:["\w]+\.)?"?{re.escape(table_name)}"?[^;]*?\((.*?)\);',
             schema_context,
-            re.IGNORECASE,
+            re.IGNORECASE | re.DOTALL,
         )
-        return match.group(1) if match else "my_table"
+        if blocks:
+            return self._extract_columns_from_schema(blocks[0])
+        return self._extract_columns_from_schema(schema_context)
 
     def _extract_columns_from_schema(self, schema_context: str) -> List[str]:
         cols = []
@@ -97,15 +115,14 @@ class SqlService:
     def _quote_schema_identifiers(self, sql: str, table_name: str, columns: List[str]) -> str:
         quoted = sql
         # Quote table name if needed
-        if table_name and " " in table_name:
+        if table_name:
             quoted = re.sub(rf'(?<!["\w]){re.escape(table_name)}(?!["\w])', f'"{table_name}"', quoted, flags=re.IGNORECASE)
         # Quote each column
         for col in sorted(columns, key=len, reverse=True):
             if not col:
                 continue
-            if " " in col or not col.isalnum():
-                pattern = rf'(?<!["\w]){re.escape(col)}(?!["\w])'
-                quoted = re.sub(pattern, f'"{col}"', quoted, flags=re.IGNORECASE)
+            pattern = rf'(?<!["\w]){re.escape(col)}(?!["\w])'
+            quoted = re.sub(pattern, f'"{col}"', quoted, flags=re.IGNORECASE)
         return quoted
 
     def _normalize_string_literals(self, sql: str, columns: List[str]) -> str:
@@ -133,14 +150,16 @@ class SqlService:
         self,
         example_sql: str,
         schema_context: str,
+        question: Optional[str] = None,
     ) -> Optional[str]:
         """Map retrieved SQL structure onto the user's schema (RAG-first path)."""
         # Skip RAG-direct for JOIN queries — can't reliably adapt multi-table patterns
         if re.search(r'\bJOIN\b', example_sql, re.IGNORECASE) and example_sql.lower().count('join') > 0:
             logger.info("RAG direct skipped: example SQL contains JOINs (multi-table adaptation unreliable)")
             return None
-        target_table = self._extract_table_from_schema(schema_context)
-        schema_cols = self._extract_columns_from_schema(schema_context)
+
+        target_table = self._extract_table_from_schema(schema_context, question)
+        schema_cols = self._extract_columns_for_table(schema_context, target_table)
         if not target_table or not schema_cols:
             return None
 
@@ -173,7 +192,7 @@ class SqlService:
         col_map = {}
         for token in tokens:
             low = token.lower()
-            if low in SQL_KEYWORDS or token.isdigit() or low in ("my_table", "users", "items", "workers"):
+            if low in SQL_KEYWORDS or token.isdigit() or low in ("my_table", "users", "items", "workers", "table"):
                 continue
             if low == target_table.lower():
                 continue
@@ -197,35 +216,52 @@ class SqlService:
         user_question: str,
         retrieved_examples: List[Dict[str, Any]],
     ) -> Optional[Dict[str, Any]]:
+        # 1. Deterministic intent matching for standard single-table queries (Zero-LLM Fast Path)
+        q_clean = user_question.strip().lower()
+        target_table = self._extract_table_from_schema(schema_context, user_question)
+        schema_cols = self._extract_columns_for_table(schema_context, target_table)
+
+        # Pattern: Count all rows / total count of a table
+        if re.search(r'\b(total\s+(?:number|count)\s+of|count\s+(?:all\s+)?|how\s+many)\b', q_clean) and not re.search(r'\b(group|by|top|sum|avg|join|each)\b', q_clean):
+            count_sql = f'SELECT COUNT(*) AS total_{target_table} FROM "{target_table}";'
+            logger.info(f"RAG direct pattern matched: total count on '{target_table}'")
+            return {
+                "sql": count_sql,
+                "explanation": f"Calculated total count directly from '{target_table}' using deterministic RAG template.",
+                "confidence": 0.98,
+                "rag_mode": "direct",
+            }
+
         if not retrieved_examples:
             return None
 
-        top = retrieved_examples[0]
-        similarity = top.get("similarity", 0.0)
-        if similarity < RAG_DIRECT_THRESHOLD:
-            return None
+        # 2. Iterate through top-5 retrieved ChromaDB examples
+        for ex in retrieved_examples[:5]:
+            similarity = ex.get("similarity", 0.0)
+            if similarity < RAG_DIRECT_THRESHOLD:
+                continue
 
-        adapted_sql = self._adapt_sql_from_example(top["sql"], schema_context)
-        if not adapted_sql:
-            return None
+            adapted_sql = self._adapt_sql_from_example(ex["sql"], schema_context, user_question)
+            if not adapted_sql:
+                continue
 
-        target_table = self._extract_table_from_schema(schema_context)
-        schema_cols = self._extract_columns_from_schema(schema_context)
-        adapted_sql = self._quote_schema_identifiers(adapted_sql, target_table, schema_cols)
+            adapted_sql = self._quote_schema_identifiers(adapted_sql, target_table, schema_cols)
 
-        logger.info(
-            f"RAG-direct adaptation (similarity={similarity:.2f}): "
-            f"'{top['question'][:60]}...'"
-        )
-        return {
-            "sql": adapted_sql,
-            "explanation": (
-                f"Adapted from similar example (similarity {similarity:.0%}): "
-                f"'{top['question']}'"
-            ),
-            "confidence": min(0.98, similarity),
-            "rag_mode": "direct",
-        }
+            logger.info(
+                f"RAG-direct adaptation successful (similarity={similarity:.2f}): "
+                f"'{ex['question'][:60]}...'"
+            )
+            return {
+                "sql": adapted_sql,
+                "explanation": (
+                    f"Adapted from similar RAG template (similarity {similarity:.0%}): "
+                    f"'{ex['question']}'"
+                ),
+                "confidence": round(min(0.98, max(0.85, similarity + 0.1)), 2),
+                "rag_mode": "direct",
+            }
+
+        return None
 
     def _build_rag_prompt(
         self,
