@@ -322,6 +322,18 @@ async def discover_live_schema(session: AsyncSession, schema_name: str) -> Dict[
             is_pk = c_name in pk_cols
             col_name_list.append(c_name)
 
+            # Sample distinct values for categorical/text columns to ground LLM in exact literals
+            sample_vals = []
+            c_type_upper = c_type.upper()
+            if any(t_name in c_type_upper for t_name in ("TEXT", "VARCHAR", "CHAR")) or c_name.lower() in ("status", "category", "type", "city", "state", "country", "role", "priority", "gender", "tier", "department"):
+                try:
+                    val_res = await session.execute(
+                        text(f'SELECT DISTINCT "{c_name}" FROM {safe_schema}."{t}" WHERE "{c_name}" IS NOT NULL LIMIT 8')
+                    )
+                    sample_vals = [str(r[0]) for r in val_res.fetchall() if r[0] is not None]
+                except Exception as val_err:
+                    logger.debug(f"Failed to fetch sample distinct values for {t}.{c_name}: {val_err}")
+
             def_str = f'"{c_name}" {c_type.upper()}'
             if is_pk:
                 def_str += " PRIMARY KEY"
@@ -329,9 +341,12 @@ async def discover_live_schema(session: AsyncSession, schema_name: str) -> Dict[
                 def_str += " NOT NULL"
             if c_default:
                 def_str += f" DEFAULT {c_default}"
+            if sample_vals:
+                def_str += f" -- Allowed/Sample Values: {sample_vals}"
 
             col_defs.append(f"  {def_str}")
-            cols_summary.append(f'    - "{c_name}" ({c_type.upper()}{", PRIMARY KEY" if is_pk else ""})')
+            sample_hint = f", Sample Values: {sample_vals}" if sample_vals else ""
+            cols_summary.append(f'    - "{c_name}" ({c_type.upper()}{", PRIMARY KEY" if is_pk else ""}{sample_hint})')
 
         fk_defs = []
         for fk in fk_list:

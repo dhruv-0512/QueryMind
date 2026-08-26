@@ -215,6 +215,28 @@ class SqlService:
         "REAL", "NUMERIC", "SERIAL", "DOUBLE PRECISION", "DECIMAL"
     }
 
+    COMPLEXITY_MARKERS = re.compile(
+        r'\b('
+        r'group\s+by|for\s+each|each\s+|per\s+|by\s+|'
+        r'having|join|where|filter|when|whose|with|who|which|'
+        r'greater\s+than|higher\s+than|more\s+than|above|'
+        r'less\s+than|lower\s+than|below|under|'
+        r'delivered|shipped|pending|cancelled|completed|status|'
+        r'chennai|mumbai|delhi|new\s+york|bangalore|city|state|country|'
+        r'category|electronics|furniture|kitchen|stationery|'
+        r'in\s+the|under\s+the|from\s+the|named\s+|called\s+|'
+        r'cheapest|most\s+expensive|fastest|slowest|'
+        r'most|least|top|bottom|latest|earliest|oldest|newest|'
+        r'before|after|between|during|since|'
+        r'among|in\s+addition|except|besides|'
+        r'percentage|percent|ratio|relative\s+to|share\s+of|'
+        r'never|not\s+in|without\s+any|'
+        r'\d+\s+(lowest|highest|cheapest|most|least|orders|products|customers|items|sales|records)|'
+        r'(lowest|highest|cheapest|most|least)\s+\d+'
+        r')\b',
+        re.IGNORECASE
+    )
+
     def _extract_column_types_for_table(self, schema_context: str, table_name: str) -> Dict[str, str]:
         col_types: Dict[str, str] = {}
         blocks = re.findall(
@@ -249,12 +271,12 @@ class SqlService:
     ) -> Optional[Dict[str, Any]]:
         q_clean = user_question.strip().lower()
 
-        # Guard: Check for complex query keywords that must be routed to LLM
-        complex_guard = re.search(
-            r'\b(group\s+by|for\s+each|each\s+|per\s+|by\s+|having|join|greater\s+than|higher\s+than|less\s+than|more\s+than|where|filter|when|whose|with|who)\b',
-            q_clean,
-        )
-        if complex_guard:
+        # Guard: Check for complex query keywords or quantity-qualified rankings that must route to LLM
+        if self.COMPLEXITY_MARKERS.search(q_clean):
+            return None
+
+        # Guard against quantities (e.g. "5 lowest", "top 3", "2 cheapest")
+        if re.search(r'\b(\d+|top|bottom|first|last)\s+(lowest|highest|cheapest|most|least|orders|products|items)\b', q_clean) or re.search(r'\b(lowest|highest|cheapest|most|least)\s+\d+\b', q_clean):
             return None
 
         # 1. Unambiguously identify target table
@@ -303,7 +325,7 @@ class SqlService:
         elif re.search(r'\b(minimum|min|lowest|smallest)\b', q_clean):
             op = "min"
             op_func = "MIN"
-        elif re.search(r'\b(maximum|max|highest|largest|greatest|most expensive)\b', q_clean):
+        elif re.search(r'\b(maximum|max|highest|largest|greatest)\b', q_clean):
             op = "max"
             op_func = "MAX"
 
@@ -350,7 +372,13 @@ class SqlService:
         user_question: str,
         retrieved_examples: List[Dict[str, Any]],
     ) -> Optional[Dict[str, Any]]:
-        # 1. Deterministic intent matching for standard single-table aggregate queries (Zero-LLM Fast Path)
+        # Rule 1 & 3: Never allow direct RAG adaptation if the query contains complex constraints
+        # that require joins, filters, groupings, rankings, or subqueries.
+        if self.COMPLEXITY_MARKERS.search(user_question):
+            logger.info("Complex query markers detected in question. Direct RAG bypassed to ensure full semantic preservation via LLM.")
+            return None
+
+        # 1. Deterministic intent matching for clean single-table aggregate queries (Zero-LLM Fast Path)
         direct_agg = self._try_direct_single_table_aggregate(schema_context, user_question)
         if direct_agg:
             return direct_agg
@@ -361,13 +389,19 @@ class SqlService:
         target_table = self._extract_table_from_schema(schema_context, user_question)
         schema_cols = self._extract_columns_for_table(schema_context, target_table)
 
-        # 2. Iterate through top-5 retrieved ChromaDB examples
+        # 2. Iterate through top retrieved ChromaDB examples ONLY for clean queries with high similarity
         for ex in retrieved_examples[:5]:
             similarity = ex.get("similarity", 0.0)
-            if similarity < RAG_DIRECT_THRESHOLD:
+            # Require high confidence for candidate template adaptation
+            if similarity < 0.85:
                 continue
 
-            adapted_sql = self._adapt_sql_from_example(ex["sql"], schema_context, user_question)
+            example_sql = ex.get("sql", "")
+            # Disallow adapting complex joins or grouped aggregations through simple token substitution
+            if re.search(r'\b(JOIN|GROUP\s+BY|HAVING)\b', example_sql, re.IGNORECASE):
+                continue
+
+            adapted_sql = self._adapt_sql_from_example(example_sql, schema_context, user_question)
             if not adapted_sql:
                 continue
 
@@ -403,7 +437,6 @@ class SqlService:
             for i, ex in enumerate(retrieved_examples, 1):
                 sim = ex.get("similarity")
                 sim_note = f" (similarity: {sim:.0%})" if sim is not None else ""
-                # Anonymise table names so the LLM uses live schema, not the example corpus.
                 raw_sql = ex.get("sql", "")
                 anon_sql = re.sub(
                     r'\b(FROM|JOIN)\s+["`]?[\w]+["`]?',
@@ -414,9 +447,9 @@ class SqlService:
                 parts.append(
                     f"Example {i}{sim_note}:\n"
                     f"Question:\n{ex['question']}\n"
-                    f"SQL pattern (table name anonymised — use your live schema table):\n{anon_sql}"
+                    f"SQL pattern (structural reference only):\n{anon_sql}"
                 )
-            examples_block = "LOGICAL SQL TEMPLATE EXAMPLES (FOR CLAUSE STRUCTURE ONLY — do NOT use <your_table> literally):\n" + "\n\n".join(parts)
+            examples_block = "LOGICAL SQL TEMPLATE EXAMPLES (FOR CLAUSE STRUCTURE ONLY — do NOT copy table/column names):\n" + "\n\n".join(parts)
 
         feedback_block = ""
         if validation_feedback:
@@ -432,19 +465,20 @@ class SqlService:
 USER QUESTION:
 {user_question}
 
-STRICT SCHEMA GROUNDING RULES:
-1. Grounding Rule: The LIVE UPLOADED DATABASE SCHEMA above is the ONLY ground truth.
-2. Template Rule: LOGICAL SQL TEMPLATE EXAMPLES are strictly structural references. Do NOT copy table or column names.
-3. Identifier Rule: Use ONLY table names and column names in the live schema. Enclose all identifiers in double quotes.
-4. JOIN Rule: When joining tables, use explicit JOIN ... ON syntax. Use only FK relationships shown in the schema above.
-5. Unmatched Field Rule: If a field does not exist, set sql: null.
-6. Generate valid PostgreSQL SELECT queries only. Prefer explicit JOIN over comma joins.
+STRICT SQL GENERATION & GROUNDING GUIDELINES:
+1. Grounding Rule: The LIVE UPLOADED DATABASE SCHEMA above is the ONLY ground truth. Enclose all table and column names in double quotes.
+2. Categorical Literal Grounding: When the schema includes '-- Allowed/Sample Values: [...]', map the user's natural phrasing (e.g. 'completed deliveries' -> 'delivered', 'finished orders' -> 'delivered', 'shipped items' -> 'shipped') to the EXACT matching database literal shown. Do NOT invent ungrounded literal values.
+3. Scalar Subquery Projection Rule: In comparison subqueries (such as `WHERE amount > (SELECT ...)` or `HAVING SUM(amount) > (SELECT ...)`), the subquery MUST project ONLY the single aggregated scalar column (e.g. `SELECT AVG(amount) FROM ...`), NEVER multiple columns or table `*`.
+4. Entity Projection Rule: When asked for "products that...", "customers who...", "find the cheapest product", or "orders with...", select all entity columns (`SELECT *` or `SELECT p.*`) or the relevant entity columns requested by the user.
+5. Ranking & Limit Rule: For "N lowest", "N highest", "top N", or "cheapest product", use `ORDER BY <column> ASC/DESC LIMIT N`.
+6. Percentage & Ratio Rule: For percentages relative to total revenue or count, use arithmetic `(SUM("amount") * 100.0 / (SELECT SUM("amount") FROM "orders"))` or window function.
+7. JOIN Rule: When joining tables, use explicit JOIN ... ON syntax. Reference matching foreign keys in the schema.
 
 Return JSON format:
 {{
   "sql": "SELECT ...",
   "explanation": "...",
-  "confidence": 0.9,
+  "confidence": 0.95,
   "error": null
 }}
 """
