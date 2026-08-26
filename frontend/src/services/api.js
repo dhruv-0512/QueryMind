@@ -107,10 +107,28 @@ async function apiRequest(path, options = {}) {
   }
 
   try {
-    const response = await fetch(`${BASE_URL}${path}`, {
-      ...options,
-      headers,
-    });
+    let response;
+    try {
+      response = await fetch(`${BASE_URL}${path}`, {
+        ...options,
+        headers,
+      });
+    } catch (networkErr) {
+      // If network dropped or cold-start reconnection needed, retry once after 1.2s
+      if (networkErr.name === 'TypeError' || (networkErr.message && networkErr.message.toLowerCase().includes('fetch'))) {
+        await new Promise((r) => setTimeout(r, 1200));
+        try {
+          response = await fetch(`${BASE_URL}${path}`, {
+            ...options,
+            headers,
+          });
+        } catch (retryErr) {
+          throw new Error('Unable to connect to backend server. The cloud backend may be restarting or waking from cold sleep. Please retry in a moment.', { cause: retryErr });
+        }
+      } else {
+        throw networkErr;
+      }
+    }
 
     reqStatus = response.status;
 
