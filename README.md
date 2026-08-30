@@ -117,7 +117,7 @@ The evaluation harness covers:
 
 | Benchmark | Result |
 |---|---|
-| **50-query RAG-First accuracy** | **96.0% (48/50)** |
+| **50-query RAG-First accuracy** | **72.0% (36/50)** |
 | **64-query benchmark** | **98.4% (63/64)** |
 | **Safety regression (10q)** | **100.0% (10/10)** |
 | **Ranking regression (6q)** | **100.0% (6/6)** |
@@ -207,4 +207,4 @@ PostgreSQL execution (or DeepSeek fallback on validation failure)
 **Frontend:** React 19, JavaScript (ES2023), Vite, Tailwind CSS 3, Recharts, Lucide Icons  
 **Backend:** FastAPI, SQLAlchemy 2.0 (async), asyncpg (COPY), Pandas, Alembic, sqlglot, Circuit Breaker  
 **Infra:** PostgreSQL 16, Redis 7, Kafka 7.6, ChromaDB, Docker Compose  
-**AI / ML:** DeepSeek AI, Google Gemini, BGE-small-en (local fastembed), Spider & WikiSQL corpora  
+**AI / ML:** DeepSeek AI, Google Gemini, BGE-small-en (local fastembed), Spider & WikiSQL corpora
